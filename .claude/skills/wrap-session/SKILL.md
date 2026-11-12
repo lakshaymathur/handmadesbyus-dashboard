@@ -14,7 +14,7 @@ Do these steps in order. Be brief and only touch what changed this session.
 
 2. **Update `docs/PROGRESS.md`**
    - Set `_Last updated:` to today's date.
-   - Tick off finished milestones. Update **Current focus**.
+   - Tick off a milestone **only if it meets the Definition of done in CLAUDE.md** (tests, typecheck/lint, browser check at phone width, `/code-review` run, and `/security-review` for M0/M8). If something is missing, leave it unticked and list what's left under Next steps. Update **Current focus**.
    - Rewrite **Next steps** as the 3–5 concrete next actions, specific enough that a fresh session can start straight away (name files or spec sections).
    - Add any decision made this session that isn't in the spec or code to **Decisions not in the spec**.
    - Add or remove **Known issues**.

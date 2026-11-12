@@ -18,7 +18,8 @@ Next.js (App Router) + TypeScript · Tailwind + shadcn/ui · PostgreSQL + Drizzl
 - `npm run dev`: app at http://localhost:3000 *(planned)*
 - `npm run db:generate` / `npm run db:migrate`: Drizzle migrations *(planned)*
 - `npm run db:seed`: load sample data · `npm run db:reset`: wipe + migrate + seed *(planned)*
-- `npm run lint` · `npm run typecheck` · `npm test` *(planned)*
+- `npm run lint` · `npm run format` · `npm run typecheck` *(planned)*
+- `npm test`: unit tests · `npm run test:integration`: against the test Postgres *(planned)*
 
 ## Folder layout (planned)
 ```
@@ -42,6 +43,17 @@ src/
 - **Readable IDs**: customers `C-0001`, orders `HMU-YYMM-####`.
 - Production stages are configurable per product category. Fulfilment stages are fixed (see §2.6).
 - Revenue is recognised on the **delivered date** (§3.6).
+
+## Quality controls (approved 2026-11-13)
+- **Database constraints** for every table: NOT NULL, foreign keys, UNIQUE (mobile, Instagram handle, product ID, AWB per partner), CHECK (qty ≥ 1, money ≥ 0, discount % 0–100, mobile 10 digits, PIN 6 digits).
+- **TypeScript strict** + `noUncheckedIndexedAccess`. Don't use `any` or `@ts-ignore` without a comment explaining why.
+- **ESLint + Prettier**, plus custom rules: no AWS/Supabase/Vercel SDK imports, and no `db` imports outside `src/db`, `features/*/queries.ts` and `features/*/actions.ts`.
+- **Every server action uses `authedAction()`** (`lib/auth`): it requires login, validates input with Zod, and sets audit fields. A lint rule enforces this.
+- **Tests**: Vitest unit tests for all money, pricing, status-transition, revenue and import logic (`*.test.ts` next to the code). Integration tests for server actions against the real test Postgres (`*.int.test.ts`). No E2E tests.
+- **Stop hook** (`.claude/hooks/typecheck-on-stop.sh`): Claude can't end a turn while `npm run typecheck` fails.
+- **Definition of done for a milestone**: tests written and passing, typecheck and lint clean, the feature tried in the built-in browser at phone width (375px), and `/code-review` run on the milestone's changes with findings fixed.
+- **`/security-review`** at the end of M0 (auth) and M8 (import).
+- **Plan mode first** for M4 Orders, M5 Dashboard, M7 Financials and M8 Import: the user approves the approach before any code is written.
 
 ## Working style
 - One task per session where possible. Read only the files the task needs.

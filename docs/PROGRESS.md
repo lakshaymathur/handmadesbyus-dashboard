@@ -6,11 +6,12 @@ _Last updated: 2026-11-13 · Keep this file under ~80 lines. Finished detail liv
 **M0: Project setup** (not started)
 
 ## Next steps
-1. Scaffold Next.js + TypeScript + Tailwind + shadcn/ui (`output: "standalone"`).
-2. `docker-compose.yml` with Postgres 17 + MinIO (data in `.docker-data/`), plus `.env.example`.
-3. Drizzle setup (`src/db/client.ts`, config, migrate script) and npm scripts from CLAUDE.md.
-4. Better Auth with the username plugin, a login page, a protected app layout with mobile nav, and a first-user seed.
-5. `lib/money`, `lib/dates`, `lib/ids`, and an S3 storage helper in `lib/storage`.
+1. Scaffold Next.js + TypeScript (strict + `noUncheckedIndexedAccess`) + Tailwind + shadcn/ui (`output: "standalone"`).
+2. Quality tooling: ESLint + Prettier with the custom rules from CLAUDE.md, a `typecheck` script, Vitest (unit + integration configs). The Stop hook activates once `typecheck` exists.
+3. `docker-compose.yml` with Postgres 17 (dev DB + test DB) and MinIO (data in `.docker-data/`), plus `.env.example`.
+4. Drizzle setup (`src/db/client.ts`, config, migrate script) and the npm scripts from CLAUDE.md.
+5. Better Auth with the username plugin, the `authedAction()` wrapper with its lint rule, a login page, a protected app layout with mobile nav, and a first-user seed.
+6. `lib/money`, `lib/dates`, `lib/ids`, an S3 helper in `lib/storage`, with unit tests. Then run `/code-review` and `/security-review`.
 
 ## Milestones (MVP)
 - [ ] **M0** Project setup: scaffold, Docker, DB, auth, layout, lib helpers
@@ -27,6 +28,7 @@ _Last updated: 2026-11-13 · Keep this file under ~80 lines. Finished detail liv
 ## Decisions not in the spec
 - Production hosting is deliberately **undecided**. Keep everything portable (see CLAUDE.md hard rules).
 - During development, real business data stays in the spreadsheet. The local DB is disposable.
+- Quality controls approved 2026-11-13 (see CLAUDE.md). **Declined**: Playwright E2E tests, lint-on-edit hook, git pre-commit hook, GitHub Actions CI. Don't add these unless the user asks.
 
 ## Known issues / TODO
 - (none)
