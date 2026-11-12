@@ -1,0 +1,53 @@
+# Local development services. Start with `docker compose up -d`.
+# Values come from `.env` (copy `.env.example`); the defaults below match it.
+# Data lives in ./.docker-data/ (git-ignored). Delete that folder to start fresh.
+name: handmadesbyus
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-handmadesbyus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-handmadesbyus}
+      POSTGRES_DB: ${POSTGRES_DB:-handmadesbyus}
+      # Name of the second database, used by `npm run test:integration`.
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB:-handmadesbyus_test}
+      TZ: UTC
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./.docker-data/postgres:/var/lib/postgresql/data
+      # Runs only when the data folder is empty (first start).
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # S3-compatible file storage. Stands in for whatever S3 service production uses;
+  # the app only speaks the S3 API. (MinIO no longer publishes Docker images.)
+  s3:
+    image: chrislusf/seaweedfs:4.53
+    restart: unless-stopped
+    command:
+      - mini
+      - -dir=/data
+      - -bucket=${S3_BUCKET:-handmadesbyus}
+      - -master.telemetry=false
+      - -admin.ui=false
+    environment:
+      # SeaweedFS creates an admin S3 identity from these.
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-handmadesbyus}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-handmadesbyus-dev-secret}
+    ports:
+      - "127.0.0.1:${S3_PORT:-8333}:8333"
+    volumes:
+      - ./.docker-data/seaweedfs:/data
+    healthcheck:
+      # Any HTTP response (even 403) means the S3 gateway is up.
+      test: ["CMD", "curl", "-s", "-o", "/dev/null", "http://127.0.0.1:8333/"]
+      interval: 5s
+      timeout: 3s
+      retries: 20

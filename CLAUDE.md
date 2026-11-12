@@ -10,11 +10,11 @@ Internal web app for a small handmade-products business (Instagram-first, India)
 - **History**: `git log --oneline`. Commit messages say what was built and why.
 
 ## Stack
-Next.js 16 (App Router; APIs differ from older versions, so check `node_modules/next/dist/docs/` per `AGENTS.md`) + TypeScript · Tailwind + shadcn/ui · PostgreSQL + Drizzle ORM · Better Auth (username + password) · S3 API for files (MinIO locally) · Zod · dnd-kit (Kanban) · Recharts · SheetJS (import). Package manager: npm.
+Next.js 16 (App Router; APIs differ from older versions, so check `node_modules/next/dist/docs/` per `AGENTS.md`) + TypeScript · Tailwind + shadcn/ui · PostgreSQL + Drizzle ORM · Better Auth (username + password) · S3 API for files (SeaweedFS locally) · Zod · dnd-kit (Kanban) · Recharts · SheetJS (import). Package manager: npm.
 
 ## Commands
 > Commands marked *(planned)* don't exist until milestone M0 is done. Update this list when they change.
-- `docker compose up -d`: start Postgres + MinIO *(planned)*
+- `cp .env.example .env` once, then `docker compose up -d --wait`: start Postgres 17 (dev + test DBs) and SeaweedFS S3 on localhost. Data in `.docker-data/` (delete it to start fresh)
 - `npm run dev`: app at http://localhost:3000 · `npm run build`: standalone build in `.next/standalone`
 - `npm run db:generate` / `npm run db:migrate`: Drizzle migrations *(planned)*
 - `npm run db:seed`: load sample data · `npm run db:reset`: wipe + migrate + seed *(planned)*
