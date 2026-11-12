@@ -29,4 +29,8 @@ Do these steps in order. Be brief and only touch what changed this session.
    - Message: `<milestone>: <what was built>` on the first line, then a few bullet lines with the key changes and any notable decisions. End with the attribution trailer from the session's instructions, if one is given.
    - Don't push.
 
-5. **Report** in 2–3 lines: what was committed, and what the next session should start with.
+5. **Stop local services** (after the commit, since tests in step 1 may need the database)
+   - If `docker-compose.yml` exists, run `docker compose stop`. This keeps all data in `.docker-data/`. Never use `docker compose down -v` or delete `.docker-data/`.
+   - If a dev server was started with `preview_start`, stop it with `preview_stop`.
+
+6. **Report** in 2–3 lines: what was committed, that services were stopped, and what the next session should start with.

@@ -3,15 +3,14 @@
 _Last updated: 2026-11-13 · Keep this file under ~80 lines. Finished detail lives in git history._
 
 ## Current focus
-**M0: Project setup** (not started)
+**M0: Project setup**, steps 1–3 done (scaffold, quality tooling, Docker). Next: Drizzle.
 
 ## Next steps
-1. Scaffold Next.js + TypeScript (strict + `noUncheckedIndexedAccess`) + Tailwind + shadcn/ui (`output: "standalone"`).
-2. Quality tooling: ESLint + Prettier with the custom rules from CLAUDE.md, a `typecheck` script, Vitest (unit + integration configs). The Stop hook activates once `typecheck` exists.
-3. `docker-compose.yml` with Postgres 17 (dev DB + test DB) and SeaweedFS (data in `.docker-data/`), plus `.env.example`.
-4. Drizzle setup (`src/db/client.ts`, config, migrate script) and the npm scripts from CLAUDE.md.
-5. Better Auth with the username plugin, the `authedAction()` wrapper with its lint rule, a login page, a protected app layout with mobile nav, and a first-user seed.
-6. `lib/money`, `lib/dates`, `lib/ids`, an S3 helper in `lib/storage`, with unit tests. Then run `/code-review` and `/security-review`.
+1. **Drizzle setup**: `src/db/client.ts` (reads `DATABASE_URL`), `drizzle.config.ts`, an empty `src/db/schema.ts`, migrate script, and the `db:generate` / `db:migrate` / `db:seed` / `db:reset` scripts from CLAUDE.md. Validate env vars with Zod at startup.
+2. **Integration test wiring**: Vitest setup that migrates and truncates `TEST_DATABASE_URL`, one smoke `*.int.test.ts`, then drop `--passWithNoTests` from `test:integration` in `package.json`.
+3. **Auth**: Better Auth with the username plugin, the `authedAction()` wrapper plus its lint rule (add a case to `eslint.config.test.ts`), a login page, a protected app layout with mobile nav, and a first-user seed. Add the auth env vars to `.env.example`.
+4. **Lib helpers** with unit tests: `lib/money` (paise, ₹1,23,456), `lib/dates` (DD/MM/YYYY, IST), `lib/ids` (`C-0001`, `HMU-YYMM-####`), and `lib/storage` (S3 helper; AWS SDKs are lint-banned, so use a generic S3 client such as `minio`).
+5. Close M0: try it at 375px, then run `/code-review` and `/security-review`, and fix the findings.
 
 ## Milestones (MVP)
 - [ ] **M0** Project setup: scaffold, Docker, DB, auth, layout, lib helpers
@@ -29,7 +28,9 @@ _Last updated: 2026-11-13 · Keep this file under ~80 lines. Finished detail liv
 - Production hosting is deliberately **undecided**. Keep everything portable (see CLAUDE.md hard rules).
 - During development, real business data stays in the spreadsheet. The local DB is disposable.
 - Local S3 is **SeaweedFS** (`weed mini`), not MinIO: MinIO stopped publishing Docker images (chosen 2026-11-13).
+- Integration tests (`*.int.test.ts`) may import the DB directly to seed and assert; the DB-import lint rule exempts them (kept 2026-11-13).
+- Next 16 template defaults `cacheComponents` and `partialPrefetching` are left on: DB reads in pages will need `<Suspense>`.
 - Quality controls approved 2026-11-13 (see CLAUDE.md). **Declined**: Playwright E2E tests, lint-on-edit hook, git pre-commit hook, GitHub Actions CI. Don't add these unless the user asks.
 
 ## Known issues / TODO
-- (none)
+- `npm audit`: 7 moderate issues in `@typescript-eslint` (used only for linting, not shipped in the app). Recheck after dependency updates.

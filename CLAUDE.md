@@ -56,6 +56,7 @@ src/
 - **Plan mode first** for M4 Orders, M5 Dashboard, M7 Financials and M8 Import: the user approves the approach before any code is written.
 
 ## Working style
+- **Start of session**: run `docker compose up -d --wait` before anything that needs the database or file storage (dev server, integration tests). `/wrap-session` stops them again.
 - One task per session where possible. Read only the files the task needs.
 - Before ending a session, the user runs `/wrap-session` to update `docs/PROGRESS.md` and commit.
 - Keep this file and PROGRESS.md short. Detail belongs in code, the spec, or git history.
