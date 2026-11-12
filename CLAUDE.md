@@ -10,16 +10,16 @@ Internal web app for a small handmade-products business (Instagram-first, India)
 - **History**: `git log --oneline`. Commit messages say what was built and why.
 
 ## Stack
-Next.js (App Router) + TypeScript · Tailwind + shadcn/ui · PostgreSQL + Drizzle ORM · Better Auth (username + password) · S3 API for files (MinIO locally) · Zod · dnd-kit (Kanban) · Recharts · SheetJS (import). Package manager: npm.
+Next.js 16 (App Router; APIs differ from older versions, so check `node_modules/next/dist/docs/` per `AGENTS.md`) + TypeScript · Tailwind + shadcn/ui · PostgreSQL + Drizzle ORM · Better Auth (username + password) · S3 API for files (MinIO locally) · Zod · dnd-kit (Kanban) · Recharts · SheetJS (import). Package manager: npm.
 
 ## Commands
 > Commands marked *(planned)* don't exist until milestone M0 is done. Update this list when they change.
 - `docker compose up -d`: start Postgres + MinIO *(planned)*
-- `npm run dev`: app at http://localhost:3000 *(planned)*
+- `npm run dev`: app at http://localhost:3000 · `npm run build`: standalone build in `.next/standalone`
 - `npm run db:generate` / `npm run db:migrate`: Drizzle migrations *(planned)*
 - `npm run db:seed`: load sample data · `npm run db:reset`: wipe + migrate + seed *(planned)*
-- `npm run lint` · `npm run format` · `npm run typecheck` *(planned)*
-- `npm test`: unit tests · `npm run test:integration`: against the test Postgres *(planned)*
+- `npm run lint` · `npm run typecheck` (`next typegen` + `tsc`) · `npm run format` / `format:check` (Markdown is excluded)
+- `npm test`: unit tests · `npm run test:integration`: against the test Postgres (DB wiring *(planned)*)
 
 ## Folder layout (planned)
 ```
@@ -47,7 +47,7 @@ src/
 ## Quality controls (approved 2026-11-13)
 - **Database constraints** for every table: NOT NULL, foreign keys, UNIQUE (mobile, Instagram handle, product ID, AWB per partner), CHECK (qty ≥ 1, money ≥ 0, discount % 0–100, mobile 10 digits, PIN 6 digits).
 - **TypeScript strict** + `noUncheckedIndexedAccess`. Don't use `any` or `@ts-ignore` without a comment explaining why.
-- **ESLint + Prettier**, plus custom rules: no AWS/Supabase/Vercel SDK imports, and no `db` imports outside `src/db`, `features/*/queries.ts` and `features/*/actions.ts`.
+- **ESLint + Prettier**, plus custom rules: no AWS/Supabase/Vercel SDK imports, and no `db`/`drizzle-orm` imports outside `src/db`, `features/*/queries.ts`, `features/*/actions.ts` and `*.int.test.ts` (type-only imports are fine). `eslint.config.test.ts` checks these rules fire. `eslint-disable` and `@ts-ignore` need a `-- reason`.
 - **Every server action uses `authedAction()`** (`lib/auth`): it requires login, validates input with Zod, and sets audit fields. A lint rule enforces this.
 - **Tests**: Vitest unit tests for all money, pricing, status-transition, revenue and import logic (`*.test.ts` next to the code). Integration tests for server actions against the real test Postgres (`*.int.test.ts`). No E2E tests.
 - **Stop hook** (`.claude/hooks/typecheck-on-stop.sh`): Claude can't end a turn while `npm run typecheck` fails.

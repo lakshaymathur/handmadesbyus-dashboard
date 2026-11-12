@@ -1,0 +1,11 @@
+.next/
+node_modules/
+.docker-data/
+coverage/
+package-lock.json
+src/db/migrations/
+# Owned by Next.js / shadcn tooling
+AGENTS.md
+next-env.d.ts
+# Hand-written docs and spec
+*.md

@@ -37,3 +37,7 @@ test-results/
 
 # Claude Code personal settings
 .claude/settings.local.json
+
+# misc
+*.pem
+.vercel
