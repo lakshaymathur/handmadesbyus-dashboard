@@ -12,7 +12,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run --project unit",
     "test:watch": "vitest --project unit",
-    "test:integration": "vitest run --project integration --passWithNoTests",
+    "test:integration": "vitest run --project integration",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env src/db/cli.ts migrate",
     "db:seed": "tsx --env-file-if-exists=.env src/db/cli.ts seed",

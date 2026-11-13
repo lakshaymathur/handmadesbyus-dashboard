@@ -19,7 +19,7 @@ Next.js 16 (App Router; APIs differ from older versions, so check `node_modules/
 - `npm run db:generate`: write a migration from `src/db/schema.ts` · `npm run db:migrate`: apply migrations · `npm run db:studio`: browse data
 - `npm run db:seed`: load sample data · `npm run db:reset`: wipe + migrate + seed (refuses non-local hosts)
 - `npm run lint` · `npm run typecheck` (`next typegen` + `tsc`) · `npm run format` / `format:check` (Markdown is excluded)
-- `npm test`: unit tests · `npm run test:integration`: against the test Postgres (DB wiring *(planned)*)
+- `npm test`: unit tests · `npm run test:integration`: against the test Postgres (needs Docker up). Each run wipes and re-migrates `TEST_DATABASE_URL`; every test starts with empty tables; the app's `db` points at the test DB
 
 ## Folder layout (planned)
 ```

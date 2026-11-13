@@ -16,7 +16,7 @@ describe("assertLocalDatabase", () => {
     "postgres://u:p@10.0.0.5/app",
     "postgres://u:p@localhost.evil.com/app",
   ])("refuses %s", (url) => {
-    expect(() => assertLocalDatabase(url)).toThrowError(/Refusing to reset/);
+    expect(() => assertLocalDatabase(url)).toThrowError(/Refusing to wipe/);
   });
 
   it("does not echo the password", () => {

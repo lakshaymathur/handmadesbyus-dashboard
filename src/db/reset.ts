@@ -17,13 +17,19 @@ export function assertLocalDatabase(url: string): void {
   const host = new URL(url).hostname;
   if (!LOCAL_HOSTS.has(host)) {
     throw new Error(
-      `Refusing to reset a non-local database (host "${host}"). Resets only run against localhost.`,
+      `Refusing to wipe a non-local database (host "${host}"). Resets and test runs only touch localhost.`,
     );
   }
 }
 
-/** Drops every table, then migrates and seeds. Local databases only. */
-export async function resetDatabase(url: string): Promise<void> {
+/**
+ * Drops every table, then migrates and (unless `seed: false`) seeds. Local databases only.
+ * Integration tests use `seed: false` for a clean, fully migrated test database.
+ */
+export async function resetDatabase(
+  url: string,
+  options: { seed?: boolean } = {},
+): Promise<void> {
   assertLocalDatabase(url);
   const db = connect(url);
   try {
@@ -34,5 +40,5 @@ export async function resetDatabase(url: string): Promise<void> {
     await db.$client.end();
   }
   await runMigrations(url);
-  await seed(url);
+  if (options.seed ?? true) await seed(url);
 }

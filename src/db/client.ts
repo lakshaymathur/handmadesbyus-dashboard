@@ -8,4 +8,5 @@ const globalForDb = globalThis as typeof globalThis & { __db?: Database };
 export const db: Database =
   globalForDb.__db ?? connect(getServerEnv().DATABASE_URL);
 
-if (process.env.NODE_ENV !== "production") globalForDb.__db = db;
+// Development only: test workers must each get (and close) their own pool.
+if (process.env.NODE_ENV === "development") globalForDb.__db = db;
