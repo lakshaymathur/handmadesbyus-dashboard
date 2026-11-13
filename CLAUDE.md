@@ -10,7 +10,7 @@ Internal web app for a small handmade-products business (Instagram-first, India)
 - **History**: `git log --oneline`. Commit messages say what was built and why.
 
 ## Stack
-Next.js 16 (App Router; APIs differ from older versions, so check `node_modules/next/dist/docs/` per `AGENTS.md`) + TypeScript · Tailwind + shadcn/ui · PostgreSQL + Drizzle ORM · Better Auth (username + password) · S3 API for files (SeaweedFS locally) · Zod · dnd-kit (Kanban) · Recharts · SheetJS (import). Package manager: npm.
+Next.js 16 (App Router; APIs differ from older versions, so check `node_modules/next/dist/docs/` per `AGENTS.md`) + TypeScript · Tailwind + shadcn/ui · PostgreSQL + Drizzle ORM · Better Auth (username + password) · S3 API for files via `aws4fetch` (SeaweedFS locally) · Zod · dnd-kit (Kanban) · Recharts · SheetJS (import). Package manager: npm.
 
 ## Commands
 > Commands marked *(planned)* don't exist until milestone M0 is done. Update this list when they change.
@@ -38,12 +38,14 @@ eslint-rules/          custom lint rules (authed-action)
 
 ## Hard rules
 - **Portability**: plain Postgres + S3 API only. No Supabase/Vercel/AWS-specific SDKs or features. All config comes from env vars, documented in `.env.example` and validated in `lib/env.ts` (add new ones to both).
-- **Money**: store as integer **paise**. Format with `lib/money` (₹1,23,456). Dates are shown as DD/MM/YYYY in IST.
+- **Money**: store as integer **paise**. Format with `formatMoney`, parse form input with `moneyField()` (`lib/money`). Never use floating-point rupees.
+- **Dates**: moments are `timestamptz`, shown with `formatDate`/`formatDateTime` (DD/MM/YYYY, IST). Calendar dates (delivered, expense date) are Postgres `date` / `"YYYY-MM-DD"` strings (`lib/dates`).
+- **Files**: private bucket via `getStorage()` (`lib/storage`); keys from `newKey()`; show files with `signedUrl()`.
 - **Snapshots**: order items copy unit price, unit cost and customisation prices at order time. Orders copy the delivery address. Never recompute history from the current catalogue.
 - **Status changes** (order status and item production stage) always go through one function that also writes a `status_history` row.
 - **No hard deletes** of used products/orders: archive or cancel instead. Every table has `created_at/by` and `updated_at/by` (except Better Auth's tables: users, sessions, accounts, verifications, rate_limits).
 - **Validation**: one Zod schema per form, used by both the client and the server action.
-- **Readable IDs**: customers `C-0001`, orders `HMU-YYMM-####`.
+- **Readable IDs**: customers `C-0001`, orders `HMU-YYMM-####` (IST month). Format/parse with `lib/ids`; numbers come from an atomic DB counter (M1).
 - Production stages are configurable per product category. Fulfilment stages are fixed (see §2.6).
 - Revenue is recognised on the **delivered date** (§3.6).
 
