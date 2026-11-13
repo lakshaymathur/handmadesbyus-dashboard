@@ -3,6 +3,8 @@ import { sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { EXAMPLE_VALUES } from "@/lib/env";
 import { db } from "./client";
+import { connect } from "./connect";
+import { categories, users } from "./schema";
 import { runMigrations } from "./migrate";
 import { seed } from "./seed";
 
@@ -103,5 +105,13 @@ describe("seed refuses the example password outside disposable databases", () =>
     process.env.SEED_USER_NAME = "Admin";
     process.env.SEED_USER_PASSWORD = "a-strong-operator-password";
     await expect(seed(probeUrl())).resolves.toBeUndefined();
+    // Not a disposable database: the user only, never sample data.
+    const probeDb = connect(probeUrl());
+    try {
+      expect(await probeDb.$count(users)).toBe(1);
+      expect(await probeDb.$count(categories)).toBe(0);
+    } finally {
+      await probeDb.$client.end();
+    }
   });
 });

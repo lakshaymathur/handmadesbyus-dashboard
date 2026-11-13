@@ -3,6 +3,7 @@ import { newPasswordSchema, usernameSchema } from "@/features/auth/schema";
 import { EXAMPLE_VALUES, parseEnv } from "@/lib/env";
 import { connect } from "./connect";
 import { describeDatabase } from "./disposable";
+import { seedSampleData } from "./sample-data";
 import { createUserWithPassword } from "./users";
 
 const seedEnvSchema = z.object({
@@ -13,8 +14,9 @@ const seedEnvSchema = z.object({
 
 /**
  * Loads starting data into the database at `url`. Safe to run more than once.
- * Creates the first login user from SEED_USER_* (see .env.example). Sample business data
- * arrives with M1.
+ * Creates the first login user from SEED_USER_* (see .env.example). On a disposable local
+ * database it also loads sample business data (src/db/sample-data.ts); elsewhere it
+ * never does.
  */
 export async function seed(url: string): Promise<void> {
   const env = parseEnv(
@@ -25,9 +27,9 @@ export async function seed(url: string): Promise<void> {
 
   const db = connect(url);
   try {
+    const { name, disposable } = await describeDatabase(db);
     // The example password is public: only allow it on a local, disposable database.
     if (env.SEED_USER_PASSWORD === EXAMPLE_VALUES.SEED_USER_PASSWORD) {
-      const { name, disposable } = await describeDatabase(db);
       if (!disposable) {
         throw new Error(
           `Refusing to seed "${name}" with the example SEED_USER_PASSWORD from .env.example: ` +
@@ -45,6 +47,14 @@ export async function seed(url: string): Promise<void> {
         ? `Created user "${env.SEED_USER_USERNAME}".`
         : `User "${env.SEED_USER_USERNAME}" already exists; left unchanged.`,
     );
+    if (disposable) {
+      const { loaded } = await seedSampleData(db, user.id);
+      console.log(
+        loaded
+          ? "Loaded sample data (categories, lists, options, products, customers)."
+          : "Sample data skipped: categories already exist.",
+      );
+    }
   } finally {
     await db.$client.end();
   }

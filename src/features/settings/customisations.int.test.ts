@@ -73,7 +73,7 @@ describe("customisation options", () => {
     expect(await getCustomisationOptions()).toMatchObject([
       {
         name: "Latkan",
-        detail: "Choice from a list · +₹50 (cost ₹20) · Box, Pouch",
+        detail: "Choice from a list · +\u2060₹50 (cost\u00a0₹20) · Box, Pouch",
         href: `/settings/customisations/${id}`,
       },
     ]);

@@ -148,7 +148,8 @@ export function describeOption(option: {
     option.inputType === "text"
       ? `Text, up to ${option.maxLength} characters`
       : INPUT_TYPE_LABELS[option.inputType];
-  const money = `+${formatMoney(option.extraPrice)} (cost ${formatMoney(option.extraCost)})`;
+  // U+2060 WORD JOINER keeps "+" and "₹50" on one line when the summary wraps.
+  const money = `+\u2060${formatMoney(option.extraPrice)} (cost\u00a0${formatMoney(option.extraCost)})`;
   const where =
     option.categoryNames.length > 0
       ? option.categoryNames.join(", ")
