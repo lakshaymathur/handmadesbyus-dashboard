@@ -2,17 +2,32 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Suspense } from "react";
 import { cn } from "@/lib/utils";
 import { isActive, navItems } from "./nav-items";
 
 /** Header links on tablets and desktops (md and up). */
 export function TopNav() {
-  const pathname = usePathname();
+  // The pathname is request data: reading it inside <Suspense> keeps the page shell
+  // prerenderable. The fallback is the same links with no tab highlighted.
+  return (
+    <Suspense fallback={<TopNavLinks pathname={null} />}>
+      <TopNavWithPathname />
+    </Suspense>
+  );
+}
+
+function TopNavWithPathname() {
+  return <TopNavLinks pathname={usePathname()} />;
+}
+
+function TopNavLinks({ pathname }: { pathname: string | null }) {
   return (
     <nav aria-label="Main" className="hidden md:block">
       <ul className="flex items-center gap-1">
-        {navItems.map(({ href, label }) => {
-          const active = isActive(pathname, href);
+        {navItems.map((item) => {
+          const { href, label } = item;
+          const active = pathname !== null && isActive(pathname, item);
           return (
             <li key={href}>
               <Link
