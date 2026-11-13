@@ -43,7 +43,7 @@ eslint-rules/          custom lint rules (authed-action)
 - **Files**: private bucket via `getStorage()` (`lib/storage`); keys from `newKey()`; show files with `signedUrl()`.
 - **Snapshots**: order items copy unit price, unit cost and customisation prices at order time. Orders copy the delivery address. Never recompute history from the current catalogue.
 - **Status changes** (order status and item production stage) always go through one function that also writes a `status_history` row.
-- **No hard deletes** of used products/orders: archive or cancel instead. Every table has `created_at/by` and `updated_at/by` (except Better Auth's tables: users, sessions, accounts, verifications, rate_limits).
+- **No hard deletes** of used products/orders: archive or cancel instead. Every table has `created_at/by` and `updated_at/by` (except Better Auth's tables: users, sessions, accounts, verifications, rate_limits; and the internal `id_counters`).
 - **Validation**: one Zod schema per form, used by both the client and the server action.
 - **Readable IDs**: customers `C-0001`, orders `HMU-YYMM-####` (IST month). Format/parse with `lib/ids`; numbers come from an atomic DB counter (M1).
 - Production stages are configurable per product category. Fulfilment stages are fixed (see §2.6).
