@@ -1,20 +1,20 @@
 # Progress
 
-_Last updated: 2026-11-13 · Keep this file under ~80 lines. Finished detail lives in git history._
+_Last updated: 2026-11-14 · Keep this file under ~80 lines. Finished detail lives in git history._
 
 ## Current focus
-**M1: Data model + Settings** (§2, §3.7). M0 is done: scaffold, Docker, Drizzle, test harness, auth, layout, lib helpers, `/code-review` and `/security-review` fixed.
+**M2: Customers** (§2.1, §3.3). M1 is done: full schema with DB constraints, atomic ID counters, all Settings screens (lists, delivery partners, categories + stages, customisation options, general, users), sample data, `/code-review` findings fixed.
 
 ## Next steps
-1. **Full schema** in `src/db/schema.ts` from §2.1–2.9: customers, addresses, products, categories, production stages (per category), customisation options, orders, order items (price/cost/customisation snapshots), status_history, shipments, payments, expenses, managed lists. Audit columns on every table and the DB constraints from CLAUDE.md "Quality controls". Then `npm run db:generate`.
-2. **Atomic ID counters** for `C-0001` and `HMU-YYMM-####` (a counters table with `UPDATE … RETURNING`), wired to `lib/ids`, with an integration test for concurrent allocation.
-3. **Settings screens** (§3.7): managed lists, categories + their production stages, customisation options. Add a `features/settings/` folder with `queries.ts` (calls `requireUser()`), `actions.ts` (`authedAction()`), and Zod schemas.
-4. **Seed sample data** in `src/db/seed.ts` (categories, stages, a few products/customers), only on databases marked `disposable-local`.
-5. Consider a lint rule that every exported function in `features/*/queries.ts` calls `requireUser()`.
+1. **Customers feature** in `src/features/customers/` (`schema.ts`, `queries.ts` with `requireUser()`, `actions.ts` with `authedAction()`), following `features/settings/` and `features/users/` patterns (`useActionForm`, `FormField`, `ManagedList`).
+2. **List + search** (§3.3): name, mobile, Instagram handle; sort with `byName`; numbers via `nextCustomerNumber(tx)` inside the insert transaction, shown as `C-0001` (`lib/ids`).
+3. **Detail + addresses** (§2.1): add/edit addresses, one default per customer (DB-enforced).
+4. **Duplicate warnings** (§3.3): warn when the mobile or Instagram handle already exists (both UNIQUE in the DB); map 23505 to field errors with `uniqueViolation`.
+5. Integration tests (`*.int.test.ts`) for every action; browser check at 375px; `/code-review`.
 
 ## Milestones (MVP)
 - [x] **M0** Project setup: scaffold, Docker, DB, auth, layout, lib helpers
-- [ ] **M1** Data model + Settings: full schema, managed lists, categories + production stages, customisation options, seed data (§2, §3.7)
+- [x] **M1** Data model + Settings: full schema, managed lists, categories + production stages, customisation options, seed data (§2, §3.7)
 - [ ] **M2** Customers: list, search, detail, addresses, duplicate warnings (§2.1, §3.3)
 - [ ] **M3** Products: grid, CRUD, photos, archive, duplicate (§2.2, §3.4)
 - [ ] **M4** Orders: create/detail, items, customisations, pricing, per-item stages, status history (§2.4–2.6, §3.2)
@@ -29,14 +29,19 @@ _Last updated: 2026-11-13 · Keep this file under ~80 lines. Finished detail liv
 - During development, real business data stays in the spreadsheet. The local DB is disposable.
 - Local S3 is **SeaweedFS** (`weed mini`), not MinIO: MinIO stopped publishing Docker images. The S3 client is `aws4fetch` (AWS SDKs are lint-banned).
 - Integration tests (`*.int.test.ts`) may import the DB directly to seed and assert; the DB-import lint rule exempts them.
-- Next 16 template defaults `cacheComponents` and `partialPrefetching` are left on: DB reads in pages will need `<Suspense>`.
+- Next 16 `cacheComponents` and `partialPrefetching` are on: route `params`, session reads and `usePathname()` must sit inside `<Suspense>`; no `generateStaticParams` on session pages.
 - Quality controls approved 2026-11-13 (see CLAUDE.md). **Declined**: Playwright E2E tests, lint-on-edit hook, git pre-commit hook, GitHub Actions CI. Don't add these unless the user asks.
-- **Sign-in brute force**: per-IP limit (Better Auth, 3/10s) plus a per-username cap (10 per 15 min, `src/db/sign-in-attempts.ts`). Accepted trade-off: a known username can be locked out for up to 15 min.
+- **Sign-in brute force**: per-IP limit (Better Auth, 3/10s) plus a per-username cap (10 per 15 min, `src/db/sign-in-attempts.ts`), which also counts wrong current passwords in "Change password". An admin password reset lifts the lockout. Accepted trade-off: a known username can be locked out for up to 15 min.
 - **Production must sit behind a reverse proxy**. `next start` refuses `x-forwarded-for` with empty `TRUSTED_PROXIES`, and refuses the example `BETTER_AUTH_SECRET`. To run `next start` locally, set `TRUSTED_PROXIES=::1`.
-- Public sign-up is off. Users are created by the seed now, and from Settings later.
+- **Users**: public sign-up is off; users are managed in Settings. Deactivation (not deletion) ends sessions and blocks sign-in; you can't deactivate yourself or the last active user, and you can't reset your own password (use "Change password").
+- **Ordered lists** (list items, partners, categories, options, stages) serialise adds and moves with `pg_advisory_xact_lock` (`src/db/locks.ts`): `FOR UPDATE` locks nothing on an empty list.
+- **Order delivered date**: DB CHECK `(status = 'delivered') = (delivered_date IS NOT NULL)`. The M4 status-change function must set it on delivery and clear it when an order moves back.
+- Sizes are stored in whole mm and grams; percentages as basis points.
 - GitHub: private repo `lakshaymathur/handmadesbyus-dashboard`. A repo-local git credential helper pushes as `lakshaymathur` whichever `gh` account is active.
 
 ## Known issues / TODO
+- M8 import must advance `id_counters` past imported customer numbers and order codes.
+- Consider a lint rule that every exported function in `features/*/queries.ts` calls `requireUser()`.
 - `npm audit`: 7 moderate issues in `@typescript-eslint` (used only for linting, not shipped in the app). Recheck after dependency updates.
 - When the startup env check fails, Next.js keeps running and returns 500s instead of exiting. Make it exit in the M9 Dockerfile (wrap `server.js`).
 - Production migration strategy (when and how `db:migrate` runs on deploy) is undecided (M9).
