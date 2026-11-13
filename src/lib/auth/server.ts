@@ -1,12 +1,25 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { username } from "better-auth/plugins";
 import { db } from "@/db/client";
 import * as schema from "@/db/schema";
+import {
+  clearSignInAttempts,
+  recordSignInAttempt,
+  SIGN_IN_LIMIT,
+} from "@/db/sign-in-attempts";
 import { getServerEnv } from "@/lib/env";
 
 const env = getServerEnv();
+
+const SIGN_IN_PATH = "/sign-in/username";
+
+function signInUsername(body: unknown): string | null {
+  const value = (body as { username?: unknown } | undefined)?.username;
+  return typeof value === "string" && value.trim() ? value : null;
+}
 
 /**
  * Better Auth: username + password, sessions in Postgres. Server-only.
@@ -50,6 +63,26 @@ export const auth = betterAuth({
       ipAddressHeaders: env.CLIENT_IP_HEADERS,
       trustedProxies: env.TRUSTED_PROXIES,
     },
+  },
+  hooks: {
+    // Per-username limit (src/db/sign-in-attempts.ts). Counted before the password check
+    // so parallel guesses can't race past it; a successful sign-in clears the count.
+    before: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== SIGN_IN_PATH) return;
+      const name = signInUsername(ctx.body);
+      if (!name) return;
+      if ((await recordSignInAttempt(db, name)) > SIGN_IN_LIMIT.maxAttempts) {
+        throw new APIError("TOO_MANY_REQUESTS", {
+          message:
+            "Too many sign-in attempts for this account. Try again later.",
+        });
+      }
+    }),
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== SIGN_IN_PATH || !ctx.context.newSession) return;
+      const name = signInUsername(ctx.body);
+      if (name) await clearSignInAttempts(db, name);
+    }),
   },
   telemetry: { enabled: false },
   plugins: [

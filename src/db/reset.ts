@@ -1,18 +1,12 @@
 import { sql } from "drizzle-orm";
 import { connect } from "./connect";
+import { describeDatabase, DISPOSABLE_MARKER } from "./disposable";
 import { runMigrations } from "./migrate";
 import { seed } from "./seed";
 
 // Hosts a reset may wipe: this machine, or the `postgres` service inside docker compose.
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const LOCAL_HOSTS = new Set([...LOOPBACK_HOSTS, "postgres"]);
-
-/**
- * Only databases carrying this comment may be wiped. docker/postgres/init sets it on the
- * local dev and test databases; a production database (even reached through an SSH
- * tunnel on localhost) won't have it.
- */
-export const DISPOSABLE_MARKER = "disposable-local";
 
 /** Throws unless `url` points at a local host. First line of defence; see the marker. */
 export function assertLocalDatabase(url: string): void {
@@ -49,14 +43,8 @@ export async function resetDatabase(
   assertLocalDatabase(url);
   const db = connect(url);
   try {
-    const { rows } = await db.execute<{ name: string; comment: string | null }>(
-      sql`SELECT current_database() AS name,
-                 shobj_description(oid, 'pg_database') AS comment
-          FROM pg_database WHERE datname = current_database()`,
-    );
-    const row = rows[0];
-    if (row?.comment !== DISPOSABLE_MARKER) {
-      const name = row?.name ?? "this database";
+    const { name, disposable } = await describeDatabase(db);
+    if (!disposable) {
       throw new Error(
         `Refusing to wipe "${name}": it isn't marked as a disposable local database. ` +
           `If it really is local, mark it with: COMMENT ON DATABASE "${name}" IS '${DISPOSABLE_MARKER}';`,

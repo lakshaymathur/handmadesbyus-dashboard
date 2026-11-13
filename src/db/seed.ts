@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { newPasswordSchema, usernameSchema } from "@/features/auth/schema";
-import { parseEnv } from "@/lib/env";
+import { EXAMPLE_VALUES, parseEnv } from "@/lib/env";
 import { connect } from "./connect";
+import { describeDatabase } from "./disposable";
 import { createUserWithPassword } from "./users";
 
 const seedEnvSchema = z.object({
@@ -24,6 +25,16 @@ export async function seed(url: string): Promise<void> {
 
   const db = connect(url);
   try {
+    // The example password is public: only allow it on a local, disposable database.
+    if (env.SEED_USER_PASSWORD === EXAMPLE_VALUES.SEED_USER_PASSWORD) {
+      const { name, disposable } = await describeDatabase(db);
+      if (!disposable) {
+        throw new Error(
+          `Refusing to seed "${name}" with the example SEED_USER_PASSWORD from .env.example: ` +
+            "it isn't a disposable local database. Set a strong SEED_USER_PASSWORD.",
+        );
+      }
+    }
     const user = await createUserWithPassword(db, {
       username: env.SEED_USER_USERNAME,
       name: env.SEED_USER_NAME,

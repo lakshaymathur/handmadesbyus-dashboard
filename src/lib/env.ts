@@ -82,6 +82,51 @@ export function parseServerEnv(
   return parseEnv(serverEnvSchema, source);
 }
 
+/**
+ * Values published in `.env.example`. Fine locally, never in a real deployment: anyone
+ * can read them. `env.test.ts` checks these stay in sync with the file.
+ */
+export const EXAMPLE_VALUES = {
+  BETTER_AUTH_SECRET: "local-dev-only-secret-change-me-in-production",
+  SEED_USER_PASSWORD: "local-dev-password",
+} as const;
+
+/**
+ * Settings that are valid but unsafe in production. Returns one message per problem.
+ * - The example secret is public.
+ * - Better Auth trusts a single-value X-Forwarded-For as the client IP when no proxies
+ *   are listed, and `next start` passes a client-sent one through unchanged, so anyone
+ *   could rotate it to dodge the per-IP sign-in limit.
+ */
+export function productionEnvProblems(env: ServerEnv): string[] {
+  const problems: string[] = [];
+  if (env.BETTER_AUTH_SECRET === EXAMPLE_VALUES.BETTER_AUTH_SECRET) {
+    problems.push(
+      "  BETTER_AUTH_SECRET: is the public example value; generate one with `openssl rand -base64 32`",
+    );
+  }
+  const usesForwardedFor = env.CLIENT_IP_HEADERS.some(
+    (h) => h.toLowerCase() === "x-forwarded-for",
+  );
+  if (usesForwardedFor && env.TRUSTED_PROXIES.length === 0) {
+    problems.push(
+      "  TRUSTED_PROXIES: must list the reverse proxy's IPs/CIDRs when CLIENT_IP_HEADERS uses x-forwarded-for " +
+        "(otherwise clients can spoof their IP), or set CLIENT_IP_HEADERS to a header the proxy overwrites, e.g. x-real-ip",
+    );
+  }
+  return problems;
+}
+
+/** Throws if `env` is unsafe for production (see productionEnvProblems). */
+export function assertProductionEnv(env: ServerEnv): void {
+  const problems = productionEnvProblems(env);
+  if (problems.length > 0) {
+    throw new Error(
+      `Unsafe settings for production (see .env.example):\n${problems.join("\n")}`,
+    );
+  }
+}
+
 let cached: ServerEnv | undefined;
 
 /** Server settings from `process.env`, validated on first use and cached. */

@@ -16,6 +16,7 @@ vi.mock("next/headers", () => ({
 }));
 
 import { db } from "@/db/client";
+import { recordSignInAttempt, SIGN_IN_LIMIT } from "@/db/sign-in-attempts";
 import { createUserWithPassword } from "@/db/users";
 import { ActionError, authedAction } from "./action";
 import { auth } from "./server";
@@ -224,7 +225,10 @@ describe("authedAction()", () => {
 
 describe("sign-in rate limiting", () => {
   // Through the HTTP handler, as a browser would hit it (auth.api calls skip rate limits).
-  async function attempt(ip: string): Promise<number> {
+  async function attempt(
+    ip: string,
+    password = "wrong-password-123",
+  ): Promise<number> {
     const response = await auth.handler(
       new Request("http://localhost:3000/api/auth/sign-in/username", {
         method: "POST",
@@ -235,7 +239,7 @@ describe("sign-in rate limiting", () => {
         },
         body: JSON.stringify({
           username: "asha",
-          password: "wrong-password-123",
+          password,
         }),
       }),
     );
@@ -256,6 +260,37 @@ describe("sign-in rate limiting", () => {
     expect(statuses).toEqual([401, 401, 401, 429]);
     // Someone else, from another address, isn't locked out.
     expect(await attempt("198.51.100.7")).toBe(401);
+  });
+
+  it("trusts a single X-Forwarded-For value only as far as the per-username limit allows", async () => {
+    // Rotating spoofed addresses dodges the per-IP limit, but not the per-account one.
+    const statuses = [];
+    for (let i = 1; i <= SIGN_IN_LIMIT.maxAttempts + 1; i++) {
+      statuses.push(await attempt(`198.51.100.${i}`));
+    }
+    expect(statuses.slice(0, -1).every((s) => s === 401)).toBe(true);
+    expect(statuses.at(-1)).toBe(429);
+    // While locked, even the right password is refused.
+    expect(await attempt("192.0.2.200", PASSWORD)).toBe(429);
+  });
+
+  it("clears the per-username count after a successful sign-in", async () => {
+    for (let i = 1; i < SIGN_IN_LIMIT.maxAttempts; i++) {
+      expect(await attempt(`198.51.100.${i}`)).toBe(401);
+    }
+    expect((await signIn("asha", PASSWORD)).status).toBe(200);
+    for (let i = 1; i < SIGN_IN_LIMIT.maxAttempts; i++) {
+      expect(await attempt(`192.0.2.${i}`)).toBe(401);
+    }
+  });
+
+  it("starts a new window once the old one has expired", async () => {
+    const t0 = 1_000_000_000_000;
+    for (let i = 0; i < 3; i++) await recordSignInAttempt(db, "ravi", t0);
+    expect(await recordSignInAttempt(db, "RAVI", t0 + 1)).toBe(4);
+    expect(
+      await recordSignInAttempt(db, "ravi", t0 + SIGN_IN_LIMIT.windowMs),
+    ).toBe(1);
   });
 
   // Origins are checked on requests that carry cookies (a signed-in browser); a first

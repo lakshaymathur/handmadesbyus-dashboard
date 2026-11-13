@@ -1,5 +1,12 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { parseServerEnv } from "./env";
+import {
+  assertProductionEnv,
+  EXAMPLE_VALUES,
+  parseServerEnv,
+  productionEnvProblems,
+} from "./env";
 
 const valid = {
   DATABASE_URL: "postgres://user:pass@localhost:5432/app",
@@ -120,5 +127,61 @@ describe("parseServerEnv", () => {
     expect(message).toContain("DATABASE_URL");
     expect(message).not.toContain("hunter2");
     expect(message).not.toContain("not a url");
+  });
+});
+
+describe("production settings", () => {
+  const env = parseServerEnv({
+    ...valid,
+    BETTER_AUTH_SECRET: "a-real-production-secret-with-entropy-xyz",
+    TRUSTED_PROXIES: "10.0.0.0/8",
+  });
+
+  it("accepts a real secret with x-forwarded-for behind listed proxies", () => {
+    expect(productionEnvProblems(env)).toEqual([]);
+    expect(() => assertProductionEnv(env)).not.toThrow();
+  });
+
+  it("refuses the public example secret", () => {
+    const problems = productionEnvProblems({
+      ...env,
+      BETTER_AUTH_SECRET: EXAMPLE_VALUES.BETTER_AUTH_SECRET,
+    });
+    expect(problems.join()).toMatch(
+      /BETTER_AUTH_SECRET: is the public example/,
+    );
+  });
+
+  it("refuses x-forwarded-for with no trusted proxies (spoofable client IP)", () => {
+    const unsafe = { ...env, TRUSTED_PROXIES: [] };
+    expect(() => assertProductionEnv(unsafe)).toThrow(
+      /TRUSTED_PROXIES: must list/,
+    );
+    expect(
+      assertProductionEnv.bind(null, {
+        ...unsafe,
+        CLIENT_IP_HEADERS: ["X-Forwarded-For"],
+      }),
+    ).toThrow(/TRUSTED_PROXIES/);
+  });
+
+  it("accepts a proxy-set header such as x-real-ip without trusted proxies", () => {
+    expect(
+      productionEnvProblems({
+        ...env,
+        TRUSTED_PROXIES: [],
+        CLIENT_IP_HEADERS: ["x-real-ip"],
+      }),
+    ).toEqual([]);
+  });
+
+  it("knows the example values actually published in .env.example", () => {
+    const example = readFileSync(
+      fileURLToPath(new URL("../../.env.example", import.meta.url)),
+      "utf8",
+    );
+    for (const [name, value] of Object.entries(EXAMPLE_VALUES)) {
+      expect(example).toMatch(new RegExp(`^${name}=${value}$`, "m"));
+    }
   });
 });
