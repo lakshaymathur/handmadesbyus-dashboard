@@ -1,27 +1,42 @@
 "use client";
 
 import { useState, useTransition, type FormEvent } from "react";
-import type { ActionResult } from "@/lib/auth/action";
+import type { ClientResult } from "@/lib/client-action";
 
-type Message = { ok: boolean; text: string };
+export type FormMessageState = { ok: boolean; text: string } | null;
+
+type Options = {
+  /** Message shown after a successful save. */
+  success?: string;
+  /** Clear the form after a successful save (e.g. an "Add" form). */
+  resetOnSuccess?: boolean;
+  /** Runs after a successful save (e.g. close an inline editor). */
+  onSuccess?: () => void;
+};
 
 /**
  * State for a form that submits to a server action: values, per-field errors (cleared as
- * a field is edited), a success/failure message and a pending flag.
+ * a field is edited), a success/failure message and a pending flag. A whole-form error
+ * is only shown when no field shows one. A redirecting action (no result) shows nothing.
  */
-export function useActionForm<Values extends Record<string, string>>(
+export function useActionForm<Values extends Record<string, unknown>>(
   initial: Values,
-  run: (values: Values) => Promise<ActionResult<unknown>>,
-  options: { success?: string; resetOnSuccess?: boolean } = {},
+  run: (values: Values) => Promise<ClientResult>,
+  options: Options = {},
 ) {
   const [values, setValues] = useState(initial);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-  const [message, setMessage] = useState<Message | null>(null);
+  const [message, setMessage] = useState<FormMessageState>(null);
   const [pending, startTransition] = useTransition();
 
-  function set(key: keyof Values & string, value: string) {
+  /** Sets a field; `errorKey` names its key in the schema if that differs (default: key). */
+  function set<K extends keyof Values & string>(
+    key: K,
+    value: Values[K],
+    errorKey: string = key,
+  ) {
     setValues((v) => ({ ...v, [key]: value }));
-    setFieldErrors(({ [key]: _cleared, ...rest }) => rest);
+    setFieldErrors(({ [errorKey]: _cleared, ...rest }) => rest);
     setMessage(null);
   }
 
@@ -30,12 +45,12 @@ export function useActionForm<Values extends Record<string, string>>(
     setMessage(null);
     startTransition(async () => {
       const result = await run(values);
-      // An action that redirects doesn't return a result.
       if (!result) return;
       if (result.ok) {
         setFieldErrors({});
         if (options.resetOnSuccess) setValues(initial);
         if (options.success) setMessage({ ok: true, text: options.success });
+        options.onSuccess?.();
         return;
       }
       setFieldErrors(result.fieldErrors ?? {});
@@ -44,7 +59,7 @@ export function useActionForm<Values extends Record<string, string>>(
     });
   }
 
-  const error = (key: keyof Values & string) => fieldErrors[key]?.[0];
+  const error = (key: string) => fieldErrors[key]?.[0];
 
   return { values, set, error, message, pending, submit };
 }

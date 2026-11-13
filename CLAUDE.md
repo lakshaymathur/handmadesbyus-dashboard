@@ -45,7 +45,8 @@ eslint-rules/          custom lint rules (authed-action)
 - **Status changes** (order status and item production stage) always go through one function that also writes a `status_history` row.
 - **No hard deletes** of used products/orders: archive or cancel instead. Every table has `created_at/by` and `updated_at/by` (except Better Auth's tables: users, sessions, accounts, verifications, rate_limits; and the internal `id_counters`).
 - **Validation**: one Zod schema per form, used by both the client and the server action.
-- **Readable IDs**: customers `C-0001`, orders `HMU-YYMM-####` (IST month). Format/parse with `lib/ids`; numbers come from an atomic DB counter (M1).
+- **Readable IDs**: customers `C-0001`, orders `HMU-YYMM-####` (IST month). Format/parse with `lib/ids`; numbers come from `src/db/id-counters.ts`, called inside the insert's transaction.
+- **Sorting names**: always `byName(column)` (`src/db/order.ts`), never `asc(column)`: the Alpine Postgres image collates byte-wise.
 - Production stages are configurable per product category. Fulfilment stages are fixed (see §2.6).
 - Revenue is recognised on the **delivered date** (§3.6).
 

@@ -11,11 +11,12 @@ import {
   Trash2,
 } from "lucide-react";
 import Link from "next/link";
-import { useId, useState, useTransition, type FormEvent } from "react";
+import { useId, useState, useTransition } from "react";
+import { FormField, FormMessage } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import type { ActionResult } from "@/lib/auth/action";
+import type { ClientResult } from "@/lib/client-action";
+import { useActionForm } from "@/lib/use-action-form";
 import { cn } from "@/lib/utils";
 import type { ManagedItem } from "../queries";
 import type { MoveDirection } from "../schema";
@@ -30,7 +31,7 @@ export type DetailField = {
   help: string;
 };
 
-type Result = ActionResult<unknown>;
+type Result = ClientResult;
 
 type Props = {
   noun: string; // "colour"
@@ -103,7 +104,7 @@ function Row({
     setError(null);
     startTransition(async () => {
       const result = await action();
-      if (!result.ok) setError(result.error);
+      if (result && !result.ok) setError(result.error);
     });
   }
 
@@ -257,73 +258,47 @@ function ItemForm({
   resetOnSuccess?: boolean;
 }) {
   const id = useId();
-  const [values, setValues] = useState(initial);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  /** Updates a field and clears its error (the schema key may differ, e.g. a URL). */
-  function change(field: keyof ItemValues, errorKey: string, value: string) {
-    setValues((v) => ({ ...v, [field]: value }));
-    setFieldErrors(({ [errorKey]: _cleared, ...rest }) => rest);
-    setError(null);
-  }
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    startTransition(async () => {
-      const result = await onSubmit(values);
-      if (result.ok) {
-        setFieldErrors({});
-        if (resetOnSuccess) setValues(initial);
-        onDone?.();
-        return;
-      }
-      setFieldErrors(result.fieldErrors ?? {});
-      // Field errors show next to their field; only repeat the message if none do.
-      if (!result.fieldErrors || Object.keys(result.fieldErrors).length === 0) {
-        setError(result.error);
-      }
-    });
-  }
-
-  const nameError = fieldErrors.name?.[0];
-  const detailError = detailField && fieldErrors[detailField.key]?.[0];
+  const form = useActionForm(initial, onSubmit, {
+    resetOnSuccess,
+    onSuccess: onDone,
+  });
+  const nameId = `${id}-name`;
+  const detailId = `${id}-detail`;
+  const detailError = detailField && form.error(detailField.key);
 
   return (
     <form
       method="post"
-      onSubmit={submit}
+      onSubmit={form.submit}
       noValidate
       aria-label={title}
       className="flex flex-col gap-3"
     >
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`${id}-name`}>{title}</Label>
+      <FormField id={nameId} label={title} error={form.error("name")}>
         <Input
-          id={`${id}-name`}
-          value={values.name}
-          onChange={(e) => change("name", "name", e.target.value)}
+          id={nameId}
+          value={form.values.name}
+          onChange={(e) => form.set("name", e.target.value)}
           placeholder="Name"
           autoComplete="off"
           className="h-11"
-          aria-invalid={nameError ? true : undefined}
-          aria-describedby={nameError ? `${id}-name-error` : undefined}
+          aria-invalid={form.error("name") ? true : undefined}
+          aria-describedby={`${nameId}-note`}
         />
-        {nameError && (
-          <p id={`${id}-name-error`} className="text-sm text-destructive">
-            {nameError}
-          </p>
-        )}
-      </div>
+      </FormField>
       {detailField && (
-        <div className="flex flex-col gap-2">
-          <Label htmlFor={`${id}-detail`}>{detailField.label}</Label>
+        <FormField
+          id={detailId}
+          label={detailField.label}
+          error={detailError}
+          help={detailField.help}
+        >
           <Input
-            id={`${id}-detail`}
-            value={values.detail}
-            onChange={(e) => change("detail", detailField.key, e.target.value)}
+            id={detailId}
+            value={form.values.detail}
+            onChange={(e) =>
+              form.set("detail", e.target.value, detailField.key)
+            }
             placeholder={detailField.placeholder}
             inputMode="url"
             autoComplete="off"
@@ -331,32 +306,19 @@ function ItemForm({
             spellCheck={false}
             className="h-11"
             aria-invalid={detailError ? true : undefined}
-            aria-describedby={`${id}-detail-help`}
+            aria-describedby={`${detailId}-note`}
           />
-          <p
-            id={`${id}-detail-help`}
-            className={cn(
-              "text-sm",
-              detailError ? "text-destructive" : "text-muted-foreground",
-            )}
-          >
-            {detailError ?? detailField.help}
-          </p>
-        </div>
+        </FormField>
       )}
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      <FormMessage message={form.message} />
       <div className="flex gap-2">
         <Button
           type="submit"
           className="h-11 flex-1 sm:flex-none"
-          disabled={pending}
+          disabled={form.pending}
         >
           {submitLabel === "Add" && <Plus aria-hidden />}
-          {pending ? "Saving…" : submitLabel}
+          {form.pending ? "Saving…" : submitLabel}
         </Button>
         {onDone && (
           <Button
@@ -364,7 +326,7 @@ function ItemForm({
             variant="outline"
             className="h-11 flex-1 sm:flex-none"
             onClick={onDone}
-            disabled={pending}
+            disabled={form.pending}
           >
             Cancel
           </Button>

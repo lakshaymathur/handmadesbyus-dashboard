@@ -265,9 +265,14 @@ describe("orders", () => {
     await makeOrder({ discountType: "percent", discountPercentBp: 1250 });
   });
 
-  it("needs a delivered date when delivered and a reason when cancelled", async () => {
+  it("has a delivered date exactly while delivered, and a reason when cancelled", async () => {
     await rejectsWith(
       makeOrder({ status: "delivered" }),
+      "orders_delivered_date",
+    );
+    // Moved back from Delivered without clearing the date: revenue would still count it.
+    await rejectsWith(
+      makeOrder({ status: "in_transit", deliveredDate: "2026-11-19" }),
       "orders_delivered_date",
     );
     await rejectsWith(

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { customisationInput, listKind } from "@/db/schema";
 import { moneyField } from "@/lib/money";
+import { nameSchema } from "@/lib/validation";
 
 // Zod schemas for the Settings forms, shared by the client forms and the server actions.
 
@@ -35,13 +36,7 @@ export function isListSlug(slug: string): slug is ListSlug {
 
 const id = z.uuid();
 
-/** A list entry's name: trimmed, inner runs of spaces collapsed ("Dark  Red" → "Dark Red"). */
-export const nameSchema = z
-  .string()
-  .transform((s) => s.trim().replace(/\s+/g, " "))
-  .pipe(
-    z.string().min(1, "Enter a name").max(60, "Keep it under 60 characters"),
-  );
+export { nameSchema };
 
 export const addListItemSchema = z.object({
   kind: z.enum(LIST_KINDS),

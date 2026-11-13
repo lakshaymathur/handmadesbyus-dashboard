@@ -1,25 +1,19 @@
 import { z } from "zod";
 import { newPasswordSchema, usernameSchema } from "@/features/auth/schema";
+import { nameSchema } from "@/lib/validation";
 
 // User management (Settings → Users, §3.7 and §4). Usernames can't change after creation.
 
 /** Better Auth user ids (ours are UUIDs; keep it loose but bounded). */
 const userId = z.string().min(1).max(64);
 
-const displayName = z
-  .string()
-  .transform((s) => s.trim().replace(/\s+/g, " "))
-  .pipe(
-    z.string().min(1, "Enter a name").max(60, "Keep it under 60 characters"),
-  );
-
 export const createUserSchema = z.object({
-  name: displayName,
+  name: nameSchema,
   username: usernameSchema,
   password: newPasswordSchema,
 });
 
-export const renameUserSchema = z.object({ id: userId, name: displayName });
+export const renameUserSchema = z.object({ id: userId, name: nameSchema });
 
 export const resetPasswordSchema = z.object({
   id: userId,

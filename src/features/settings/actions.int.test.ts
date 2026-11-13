@@ -9,7 +9,7 @@ vi.mock("next/cache", () => ({ refresh: vi.fn() }));
 
 import { refresh } from "next/cache";
 import { db } from "@/db/client";
-import { deliveryPartners, listItems } from "@/db/schema";
+import { appSettings, deliveryPartners, listItems } from "@/db/schema";
 import { signInTestUser, signOutTestUser } from "@/db/test/session";
 import {
   addDeliveryPartner,
@@ -17,10 +17,16 @@ import {
   moveDeliveryPartner,
   moveListItem,
   renameListItem,
+  setDeliveryPartnerActive,
   setListItemActive,
   updateDeliveryPartner,
+  updateGeneralSettings,
 } from "./actions";
-import { getDeliveryPartners, getListItems } from "./queries";
+import {
+  getDeliveryPartners,
+  getGeneralSettings,
+  getListItems,
+} from "./queries";
 
 let userId: string;
 
@@ -211,5 +217,85 @@ describe("delivery partners", () => {
       "DTDC Express",
       "Delhivery",
     ]);
+  });
+});
+
+describe("ordering and concurrency", () => {
+  it("sorts names ignoring case when the order ties", async () => {
+    const by = { createdBy: userId, updatedBy: userId };
+    await db.insert(listItems).values(
+      ["Zari", "ivory", "Gold"].map((name) => ({
+        kind: "colour" as const,
+        name,
+        sortOrder: 0,
+        ...by,
+      })),
+    );
+    expect(await names("colour")).toEqual(["Gold", "ivory", "Zari"]);
+  });
+
+  it("gives simultaneous adds distinct positions", async () => {
+    await Promise.all(
+      ["A", "B", "C", "D", "E"].map((name) =>
+        addListItem({ kind: "colour", name }),
+      ),
+    );
+    const rows = await db
+      .select({ sortOrder: listItems.sortOrder })
+      .from(listItems)
+      .orderBy(asc(listItems.sortOrder));
+    expect(rows.map((r) => r.sortOrder)).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+
+describe("delivery partner status", () => {
+  it("deactivates and reactivates, recording who did it", async () => {
+    await addDeliveryPartner({ name: "DTDC", trackingUrlTemplate: "" });
+    const [dtdc] = await getDeliveryPartners();
+    const { userId: other } = await signInTestUser("ravi");
+    expect(
+      await setDeliveryPartnerActive({ id: dtdc!.id, active: false }),
+    ).toEqual({ ok: true, data: undefined });
+    const [row] = await db
+      .select()
+      .from(deliveryPartners)
+      .where(eq(deliveryPartners.id, dtdc!.id));
+    expect(row).toMatchObject({ active: false, updatedBy: other });
+    await setDeliveryPartnerActive({ id: dtdc!.id, active: true });
+    expect((await getDeliveryPartners())[0]?.active).toBe(true);
+  });
+});
+
+describe("general settings", () => {
+  it("defaults to 3 days until saved", async () => {
+    expect(await getGeneralSettings()).toEqual({ dueSoonDays: 3 });
+  });
+
+  it("creates the settings row on first save and updates it after", async () => {
+    expect(await updateGeneralSettings({ dueSoonDays: "5" })).toEqual({
+      ok: true,
+      data: undefined,
+    });
+    const { userId: other } = await signInTestUser("ravi");
+    await updateGeneralSettings({ dueSoonDays: "0" });
+    const rows = await db.select().from(appSettings);
+    expect(rows).toHaveLength(1);
+    // The first saver stays the creator; the latest one is the updater.
+    expect(rows[0]).toMatchObject({
+      id: 1,
+      dueSoonDays: 0,
+      createdBy: userId,
+      updatedBy: other,
+    });
+    expect(await getGeneralSettings()).toEqual({ dueSoonDays: 0 });
+  });
+
+  it("rejects days outside 0–60", async () => {
+    for (const dueSoonDays of ["61", "-1", "2.5", ""]) {
+      expect(await updateGeneralSettings({ dueSoonDays })).toMatchObject({
+        ok: false,
+        fieldErrors: { dueSoonDays: expect.any(Array) },
+      });
+    }
   });
 });

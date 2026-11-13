@@ -293,7 +293,7 @@ export function UserStatusButton({
         { id: userId, active: !active },
         setUserActive,
       );
-      if (!result.ok) setError(result.error);
+      if (result && !result.ok) setError(result.error);
     });
   }
 

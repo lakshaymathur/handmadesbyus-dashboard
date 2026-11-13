@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { DateOnly } from "@/lib/dates";
 import { formatOrderId, orderIdPrefix } from "@/lib/ids";
-import type { Database } from "./connect";
+import type { Executor } from "./connect";
 import { idCounters } from "./schema";
 
 // Numbers for readable IDs (lib/ids): customers C-0001, orders HMU-YYMM-#### per month.
@@ -10,10 +10,6 @@ import { idCounters } from "./schema";
 // counter, so concurrent callers always get different numbers. Call it inside the same
 // transaction that inserts the customer or order. Then a failed insert rolls the counter
 // back too (no gaps), and the lock is held only until that transaction ends.
-
-/** The database, or a transaction from `db.transaction(async (tx) => …)`. */
-export type Executor =
-  Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
 
 async function nextValue(db: Executor, name: string): Promise<number> {
   const [row] = await db

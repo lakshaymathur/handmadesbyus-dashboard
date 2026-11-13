@@ -1,5 +1,6 @@
 import { asc, count, eq } from "drizzle-orm";
 import { db } from "@/db/client";
+import { byName } from "@/db/order";
 import {
   categories,
   customisationChoices,
@@ -38,7 +39,7 @@ export async function getListItems(kind: ListKind): Promise<ManagedItem[]> {
     })
     .from(listItems)
     .where(eq(listItems.kind, kind))
-    .orderBy(asc(listItems.sortOrder), asc(listItems.name));
+    .orderBy(asc(listItems.sortOrder), byName(listItems.name));
   return rows.map((row) => ({ ...row, detail: null }));
 }
 
@@ -53,7 +54,7 @@ export async function getDeliveryPartners(): Promise<ManagedItem[]> {
       detail: deliveryPartners.trackingUrlTemplate,
     })
     .from(deliveryPartners)
-    .orderBy(asc(deliveryPartners.sortOrder), asc(deliveryPartners.name));
+    .orderBy(asc(deliveryPartners.sortOrder), byName(deliveryPartners.name));
 }
 
 /** Categories in display order, each linking to its stages page. */
@@ -69,7 +70,7 @@ export async function getCategories(): Promise<ManagedItem[]> {
     .from(categories)
     .leftJoin(productionStages, eq(productionStages.categoryId, categories.id))
     .groupBy(categories.id)
-    .orderBy(asc(categories.sortOrder), asc(categories.name));
+    .orderBy(asc(categories.sortOrder), byName(categories.name));
   return rows.map(({ stages, ...row }) => ({
     ...row,
     detail: stages === 1 ? "1 stage" : `${stages} stages`,
@@ -105,7 +106,7 @@ export async function getCategoryWithStages(
     .select({ id: productionStages.id, name: productionStages.name })
     .from(productionStages)
     .where(eq(productionStages.categoryId, id))
-    .orderBy(asc(productionStages.position), asc(productionStages.name));
+    .orderBy(asc(productionStages.position), byName(productionStages.name));
   return {
     ...category,
     stages: stages.map((stage, index) => ({
@@ -128,7 +129,7 @@ async function optionCategoryNames(): Promise<Map<string, string[]>> {
       categories,
       eq(categories.id, customisationOptionCategories.categoryId),
     )
-    .orderBy(asc(categories.sortOrder), asc(categories.name));
+    .orderBy(asc(categories.sortOrder), byName(categories.name));
   const byOption = new Map<string, string[]>();
   for (const { optionId, name } of rows) {
     byOption.set(optionId, [...(byOption.get(optionId) ?? []), name]);
@@ -166,7 +167,7 @@ export async function getCustomisationOptions(): Promise<ManagedItem[]> {
       .from(customisationOptions)
       .orderBy(
         asc(customisationOptions.sortOrder),
-        asc(customisationOptions.name),
+        byName(customisationOptions.name),
       ),
     optionCategoryNames(),
   ]);
@@ -194,7 +195,7 @@ export async function getCategoryChoices(): Promise<CategoryChoice[]> {
       active: categories.active,
     })
     .from(categories)
-    .orderBy(asc(categories.sortOrder), asc(categories.name));
+    .orderBy(asc(categories.sortOrder), byName(categories.name));
 }
 
 export type CustomisationOptionDetail = {
@@ -233,7 +234,7 @@ export async function getCustomisationOption(
       .where(eq(customisationChoices.optionId, id))
       .orderBy(
         asc(customisationChoices.sortOrder),
-        asc(customisationChoices.name),
+        byName(customisationChoices.name),
       ),
   ]);
   return {

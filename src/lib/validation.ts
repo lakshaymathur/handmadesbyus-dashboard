@@ -1,4 +1,15 @@
-import type { z } from "zod";
+import { z } from "zod";
+
+/**
+ * A short name typed into a form (a colour, a category, a person): trimmed, inner runs of
+ * spaces collapsed ("Dark  Red" → "Dark Red"), 1–60 characters.
+ */
+export const nameSchema = z
+  .string()
+  .transform((s) => s.trim().replace(/\s+/g, " "))
+  .pipe(
+    z.string().min(1, "Enter a name").max(60, "Keep it under 60 characters"),
+  );
 
 export type FormErrors = {
   /** Errors about the form as a whole (e.g. an object-level .refine), if any. */

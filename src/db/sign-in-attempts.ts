@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
-import type { Database } from "./connect";
+import type { Executor } from "./connect";
 import { rateLimits } from "./schema";
 
 // Per-username sign-in limit, on top of Better Auth's per-IP limit. The per-IP limit is
@@ -28,7 +28,7 @@ function keyFor(username: string): string {
  * limit. The window starts at the first attempt after the previous one expired.
  */
 export async function recordSignInAttempt(
-  db: Database,
+  db: Executor,
   username: string,
   now = Date.now(),
 ): Promise<number> {
@@ -52,9 +52,9 @@ export async function recordSignInAttempt(
   return row?.count ?? 1;
 }
 
-/** Forgets attempts for `username` (after a successful sign-in). */
+/** Forgets attempts for `username` (after a successful sign-in or a password reset). */
 export async function clearSignInAttempts(
-  db: Database,
+  db: Executor,
   username: string,
 ): Promise<void> {
   await db.delete(rateLimits).where(eq(rateLimits.key, keyFor(username)));

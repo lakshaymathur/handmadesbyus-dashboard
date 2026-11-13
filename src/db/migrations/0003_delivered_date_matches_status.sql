@@ -1,0 +1,2 @@
+ALTER TABLE "orders" DROP CONSTRAINT "orders_delivered_date";--> statement-breakpoint
+ALTER TABLE "orders" ADD CONSTRAINT "orders_delivered_date" CHECK (("orders"."status" = 'delivered') = ("orders"."delivered_date" IS NOT NULL));

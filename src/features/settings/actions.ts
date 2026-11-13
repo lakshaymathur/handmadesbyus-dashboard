@@ -4,6 +4,8 @@ import { asc, eq, max } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
+import { lockList } from "@/db/locks";
+import { byName } from "@/db/order";
 import { foreignKeyViolation, uniqueViolation } from "@/db/errors";
 import {
   appSettings,
@@ -15,7 +17,7 @@ import {
   listItems,
   productionStages,
 } from "@/db/schema";
-import { ActionError, authedAction } from "@/lib/auth/action";
+import { ActionError, assertFound, authedAction } from "@/lib/auth/action";
 import { moveInList } from "./reorder";
 import {
   addCategorySchema,
@@ -57,10 +59,6 @@ async function saveName(write: () => Promise<unknown>): Promise<void> {
   }
 }
 
-function assertFound(rows: unknown[]): void {
-  if (rows.length === 0) throw new ActionError(GONE);
-}
-
 /**
  * Moves `id` one place within `siblings` (locked, in display order), then renumbers
  * everything 0..n with `write`, so ties left by older rows can't make the move a no-op.
@@ -91,6 +89,7 @@ export const addListItem = authedAction(
   async ({ kind, name }, { audit }) => {
     await saveName(() =>
       db.transaction(async (tx) => {
+        await lockList(tx, `list_items:${kind}`);
         const [last] = await tx
           .select({ value: max(listItems.sortOrder) })
           .from(listItems)
@@ -146,11 +145,12 @@ export const moveListItem = authedAction(
         .from(listItems)
         .where(eq(listItems.id, id));
       if (!item) throw new ActionError(GONE);
+      await lockList(tx, `list_items:${item.kind}`);
       const siblings = await tx
         .select({ id: listItems.id, position: listItems.sortOrder })
         .from(listItems)
         .where(eq(listItems.kind, item.kind))
-        .orderBy(asc(listItems.sortOrder), asc(listItems.name))
+        .orderBy(asc(listItems.sortOrder), byName(listItems.name))
         .for("update");
       await applyMove(siblings, id, direction, (rowId, position) =>
         tx
@@ -170,6 +170,7 @@ export const addDeliveryPartner = authedAction(
   async ({ name, trackingUrlTemplate }, { audit }) => {
     await saveName(() =>
       db.transaction(async (tx) => {
+        await lockList(tx, "delivery_partners");
         const [last] = await tx
           .select({ value: max(deliveryPartners.sortOrder) })
           .from(deliveryPartners);
@@ -219,13 +220,14 @@ export const moveDeliveryPartner = authedAction(
   moveSchema,
   async ({ id, direction }, { audit }) => {
     await db.transaction(async (tx) => {
+      await lockList(tx, "delivery_partners");
       const siblings = await tx
         .select({
           id: deliveryPartners.id,
           position: deliveryPartners.sortOrder,
         })
         .from(deliveryPartners)
-        .orderBy(asc(deliveryPartners.sortOrder), asc(deliveryPartners.name))
+        .orderBy(asc(deliveryPartners.sortOrder), byName(deliveryPartners.name))
         .for("update");
       await applyMove(siblings, id, direction, (rowId, position) =>
         tx
@@ -248,6 +250,7 @@ export const addCategory = authedAction(
   async ({ name }, { audit }) => {
     await saveName(() =>
       db.transaction(async (tx) => {
+        await lockList(tx, "categories");
         const [last] = await tx
           .select({ value: max(categories.sortOrder) })
           .from(categories);
@@ -302,10 +305,11 @@ export const moveCategory = authedAction(
   moveSchema,
   async ({ id, direction }, { audit }) => {
     await db.transaction(async (tx) => {
+      await lockList(tx, "categories");
       const siblings = await tx
         .select({ id: categories.id, position: categories.sortOrder })
         .from(categories)
-        .orderBy(asc(categories.sortOrder), asc(categories.name))
+        .orderBy(asc(categories.sortOrder), byName(categories.name))
         .for("update");
       await applyMove(siblings, id, direction, (rowId, position) =>
         tx
@@ -324,7 +328,7 @@ function lockStages(tx: Transaction, categoryId: string) {
     .select({ id: productionStages.id, position: productionStages.position })
     .from(productionStages)
     .where(eq(productionStages.categoryId, categoryId))
-    .orderBy(asc(productionStages.position), asc(productionStages.name))
+    .orderBy(asc(productionStages.position), byName(productionStages.name))
     .for("update");
 }
 
@@ -466,6 +470,7 @@ export const createCustomisationOption = authedAction(
     let id = "";
     await saveOption(() =>
       db.transaction(async (tx) => {
+        await lockList(tx, "customisation_options");
         const [last] = await tx
           .select({ value: max(customisationOptions.sortOrder) })
           .from(customisationOptions);
@@ -524,6 +529,7 @@ export const moveCustomisationOption = authedAction(
   moveSchema,
   async ({ id, direction }, { audit }) => {
     await db.transaction(async (tx) => {
+      await lockList(tx, "customisation_options");
       const siblings = await tx
         .select({
           id: customisationOptions.id,
@@ -532,7 +538,7 @@ export const moveCustomisationOption = authedAction(
         .from(customisationOptions)
         .orderBy(
           asc(customisationOptions.sortOrder),
-          asc(customisationOptions.name),
+          byName(customisationOptions.name),
         )
         .for("update");
       await applyMove(siblings, id, direction, (rowId, position) =>
@@ -556,7 +562,7 @@ function lockChoices(tx: Transaction, optionId: string) {
     .where(eq(customisationChoices.optionId, optionId))
     .orderBy(
       asc(customisationChoices.sortOrder),
-      asc(customisationChoices.name),
+      byName(customisationChoices.name),
     )
     .for("update");
 }

@@ -14,7 +14,7 @@ import {
   SIGN_IN_LIMIT,
 } from "@/db/sign-in-attempts";
 import { createUserWithPassword } from "@/db/users";
-import { ActionError, authedAction } from "@/lib/auth/action";
+import { ActionError, assertFound, authedAction } from "@/lib/auth/action";
 import { auth } from "@/lib/auth/server";
 import {
   changeOwnPasswordSchema,
@@ -61,13 +61,14 @@ export const renameUser = authedAction(
       .set({ name })
       .where(eq(users.id, id))
       .returning({ id: users.id });
-    if (rows.length === 0) throw new ActionError(GONE);
+    assertFound(rows, GONE);
     refresh();
   },
 );
 
 /**
- * Sets a new password for someone else and signs them out everywhere. Your own password
+ * Sets a new password for someone else, signs them out everywhere and lifts any sign-in
+ * lockout. Your own password
  * changes through changeOwnPassword, which needs the current one: a stolen session
  * shouldn't be enough to lock the real owner out.
  */
@@ -88,8 +89,14 @@ export const resetUserPassword = authedAction(
           and(eq(accounts.userId, id), eq(accounts.providerId, "credential")),
         )
         .returning({ id: accounts.id });
-      if (rows.length === 0) throw new ActionError(GONE);
+      assertFound(rows, GONE);
       await tx.delete(sessions).where(eq(sessions.userId, id));
+      // A reset is the way out of a sign-in lockout, so it lifts the lockout too.
+      const [target] = await tx
+        .select({ username: users.username })
+        .from(users)
+        .where(eq(users.id, id));
+      if (target) await clearSignInAttempts(tx, target.username);
     });
     refresh();
   },
@@ -120,7 +127,7 @@ export const setUserActive = authedAction(
         .set({ deactivatedAt: active ? null : new Date() })
         .where(eq(users.id, id))
         .returning({ id: users.id });
-      if (rows.length === 0) throw new ActionError(GONE);
+      assertFound(rows, GONE);
       if (!active) await tx.delete(sessions).where(eq(sessions.userId, id));
     });
     refresh();

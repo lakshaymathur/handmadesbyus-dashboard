@@ -133,6 +133,17 @@ describe("resetting someone's password", () => {
     );
   });
 
+  it("lifts a sign-in lockout", async () => {
+    const ravi = await otherSignedInUser();
+    for (let i = 0; i < 11; i++)
+      await signInOverHttp("ravi", `wrong-guess-${i}`);
+    expect((await signInOverHttp("ravi", TEST_PASSWORD)).status).toBe(429);
+    await resetUserPassword({ id: ravi, password: "brand-new-password" });
+    expect((await signInOverHttp("ravi", "brand-new-password")).status).toBe(
+      200,
+    );
+  });
+
   it("refuses your own: that needs the current password", async () => {
     expect(
       await resetUserPassword({ id: me, password: "brand-new-password" }),

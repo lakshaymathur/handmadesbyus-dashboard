@@ -587,7 +587,7 @@ export const orders = pgTable(
     deliveryState: text().notNull(),
     deliveryPin: text().notNull(),
     deliveryCountry: text().notNull().default("India"),
-    // Revenue is recognised on this date (§3.6). Required once delivered.
+    // Revenue is recognised on this date (§3.6). Set exactly while status is delivered.
     deliveredDate: date({ mode: "string" }),
     cancelReason: text(),
     refundOwed: boolean().notNull().default(false),
@@ -615,9 +615,11 @@ export const orders = pgTable(
     ),
     nonNegative("orders_shipping_charged", t.shippingCharged),
     pinCheck("orders_delivery_pin", t.deliveryPin),
+    // Delivered orders have a delivered date and nothing else does, so moving an order
+    // back from Delivered must clear it: revenue is counted on this date (§3.6).
     check(
       "orders_delivered_date",
-      sql`${t.status} <> 'delivered' OR ${t.deliveredDate} IS NOT NULL`,
+      sql`(${t.status} = 'delivered') = (${t.deliveredDate} IS NOT NULL)`,
     ),
     check(
       "orders_cancel_reason",

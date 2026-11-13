@@ -22,6 +22,17 @@ export class ActionError extends Error {
   }
 }
 
+/**
+ * Throws a "no longer exists" ActionError if an UPDATE/DELETE … RETURNING touched no rows:
+ * someone else removed the record since the page loaded.
+ */
+export function assertFound(
+  rows: unknown[],
+  message = "That entry no longer exists. Reload the page.",
+): void {
+  if (rows.length === 0) throw new ActionError(message);
+}
+
 export type ActionContext = {
   user: CurrentUser;
   /** Spread into inserts (`...audit.create`) and updates (`...audit.update`). */

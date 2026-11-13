@@ -1,5 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
+import { byName } from "@/db/order";
 import { users } from "@/db/schema";
 import { requireUser } from "@/lib/auth/session";
 
@@ -24,10 +25,7 @@ export async function getUsers(): Promise<UserSummary[]> {
   const rows = await db
     .select(columns)
     .from(users)
-    .orderBy(
-      sql`${users.deactivatedAt} IS NOT NULL`,
-      sql`lower(${users.name})`,
-    );
+    .orderBy(sql`${users.deactivatedAt} IS NOT NULL`, byName(users.name));
   return rows.map((row) => ({ ...row, isYou: row.id === me.id }));
 }
 

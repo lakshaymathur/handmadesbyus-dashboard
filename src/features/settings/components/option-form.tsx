@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useState, useTransition, type FormEvent } from "react";
+import { useId } from "react";
+import { FormField, FormMessage } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { validateThenRun } from "@/lib/client-action";
+import { useActionForm } from "@/lib/use-action-form";
 import { cn } from "@/lib/utils";
 import {
   createCustomisationOption,
@@ -37,27 +38,29 @@ type Props = {
 /** Create or edit a customisation option (§2.3). */
 export function OptionForm({ optionId, initial, categories }: Props) {
   const id = useId();
-  const [values, setValues] = useState(initial);
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
-    null,
+  const form = useActionForm(
+    initial,
+    (values) =>
+      optionId
+        ? validateThenRun(
+            updateCustomisationOptionSchema,
+            { ...values, id: optionId },
+            updateCustomisationOption,
+          )
+        : // Creating redirects to the new option's page.
+          validateThenRun(
+            customisationOptionSchema,
+            values,
+            createCustomisationOption,
+          ),
+    { success: "Saved. New orders use these prices." },
   );
-  const [pending, startTransition] = useTransition();
+  const { values, set, error } = form;
 
   // Inactive categories are offered only if the option already uses them.
   const shownCategories = categories.filter(
     (c) => c.active || initial.categoryIds.includes(c.id),
   );
-
-  function set<K extends keyof CustomisationOptionInput>(
-    key: K,
-    value: CustomisationOptionInput[K],
-  ) {
-    setValues((v) => ({ ...v, [key]: value }));
-    // Editing a field clears its error; the rest stay until the next submit.
-    setFieldErrors(({ [key]: _cleared, ...rest }) => rest);
-    setMessage(null);
-  }
 
   function toggleCategory(categoryId: string, checked: boolean) {
     set(
@@ -68,42 +71,14 @@ export function OptionForm({ optionId, initial, categories }: Props) {
     );
   }
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setMessage(null);
-    startTransition(async () => {
-      const result = optionId
-        ? await validateThenRun(
-            updateCustomisationOptionSchema,
-            { ...values, id: optionId },
-            updateCustomisationOption,
-          )
-        : await validateThenRun(
-            customisationOptionSchema,
-            values,
-            createCustomisationOption,
-          );
-      // Creating redirects to the new option's page instead of returning.
-      if (!result) return;
-      setFieldErrors(result.ok ? {} : (result.fieldErrors ?? {}));
-      setMessage(
-        result.ok
-          ? { ok: true, text: "Saved. New orders use these prices." }
-          : { ok: false, text: result.error },
-      );
-    });
-  }
-
-  const error = (key: string) => fieldErrors[key]?.[0];
-
   return (
     <form
       method="post"
-      onSubmit={submit}
+      onSubmit={form.submit}
       noValidate
       className="flex flex-col gap-6"
     >
-      <Field id={`${id}-name`} label="Name" error={error("name")}>
+      <FormField id={`${id}-name`} label="Name" error={error("name")}>
         <Input
           id={`${id}-name`}
           value={values.name}
@@ -112,8 +87,9 @@ export function OptionForm({ optionId, initial, categories }: Props) {
           autoComplete="off"
           className="h-11"
           aria-invalid={error("name") ? true : undefined}
+          aria-describedby={`${id}-name-note`}
         />
-      </Field>
+      </FormField>
 
       <fieldset className="flex flex-col gap-2">
         <legend className="mb-2 text-sm font-medium">
@@ -146,7 +122,7 @@ export function OptionForm({ optionId, initial, categories }: Props) {
       </fieldset>
 
       {values.inputType === "text" && (
-        <Field
+        <FormField
           id={`${id}-max`}
           label="Longest text allowed (characters)"
           error={error("maxLength")}
@@ -158,12 +134,13 @@ export function OptionForm({ optionId, initial, categories }: Props) {
             inputMode="numeric"
             className="h-11 w-32"
             aria-invalid={error("maxLength") ? true : undefined}
+            aria-describedby={`${id}-max-note`}
           />
-        </Field>
+        </FormField>
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <Field
+        <FormField
           id={`${id}-price`}
           label="Extra price (₹)"
           error={error("extraPrice")}
@@ -176,9 +153,10 @@ export function OptionForm({ optionId, initial, categories }: Props) {
             inputMode="decimal"
             className="h-11"
             aria-invalid={error("extraPrice") ? true : undefined}
+            aria-describedby={`${id}-price-note`}
           />
-        </Field>
-        <Field
+        </FormField>
+        <FormField
           id={`${id}-cost`}
           label="Extra cost (₹)"
           error={error("extraCost")}
@@ -191,8 +169,9 @@ export function OptionForm({ optionId, initial, categories }: Props) {
             inputMode="decimal"
             className="h-11"
             aria-invalid={error("extraCost") ? true : undefined}
+            aria-describedby={`${id}-cost-note`}
           />
-        </Field>
+        </FormField>
       </div>
 
       <fieldset className="flex flex-col gap-2">
@@ -233,51 +212,10 @@ export function OptionForm({ optionId, initial, categories }: Props) {
         )}
       </fieldset>
 
-      {message && (
-        <p
-          role={message.ok ? "status" : "alert"}
-          className={cn(
-            "text-sm",
-            message.ok ? "text-muted-foreground" : "text-destructive",
-          )}
-        >
-          {message.text}
-        </p>
-      )}
-      <Button type="submit" className="h-11" disabled={pending}>
-        {pending ? "Saving…" : optionId ? "Save" : "Create option"}
+      <FormMessage message={form.message} />
+      <Button type="submit" className="h-11" disabled={form.pending}>
+        {form.pending ? "Saving…" : optionId ? "Save" : "Create option"}
       </Button>
     </form>
-  );
-}
-
-function Field({
-  id,
-  label,
-  error,
-  help,
-  children,
-}: {
-  id: string;
-  label: string;
-  error?: string;
-  help?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <Label htmlFor={id}>{label}</Label>
-      {children}
-      {(error ?? help) && (
-        <p
-          className={cn(
-            "text-sm",
-            error ? "text-destructive" : "text-muted-foreground",
-          )}
-        >
-          {error ?? help}
-        </p>
-      )}
-    </div>
   );
 }

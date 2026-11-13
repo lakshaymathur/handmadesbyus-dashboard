@@ -16,6 +16,7 @@ import {
   deleteStage,
   moveCategory,
   moveStage,
+  renameCategory,
   renameStage,
   setCategoryActive,
 } from "./actions";
@@ -54,6 +55,23 @@ describe("categories", () => {
         name: "Not started",
         detail: "Only stage: items start and finish here",
       },
+    ]);
+  });
+
+  it("can be renamed, but not onto another category's name", async () => {
+    const box = await category("Box");
+    await category("Pouch");
+    expect(await renameCategory({ id: box.id, name: "Gift box" })).toEqual({
+      ok: true,
+      data: undefined,
+    });
+    expect(await renameCategory({ id: box.id, name: "POUCH" })).toMatchObject({
+      ok: false,
+      fieldErrors: { name: ["Already in the list"] },
+    });
+    expect((await getCategories()).map((c) => c.name)).toEqual([
+      "Gift box",
+      "Pouch",
     ]);
   });
 

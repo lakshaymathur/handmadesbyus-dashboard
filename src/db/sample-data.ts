@@ -6,8 +6,7 @@ import * as s from "./schema";
 // only into databases marked disposable (src/db/disposable.ts). Real data stays in the
 // spreadsheet until the import (M8). Everything here is made up: names, numbers and
 // handles are fictional, and tracking links are examples to check before real use.
-
-const rupees = (amount: number) => Math.round(amount * 100); // → paise
+// Money is written in paise (CLAUDE.md: never floating-point rupees).
 
 const BOX_STAGES = [
   "Not started",
@@ -143,8 +142,8 @@ export async function seedSampleData(
         {
           name: "Latkan",
           inputType: "choice",
-          extraPrice: rupees(50),
-          extraCost: rupees(15),
+          extraPrice: 5_000 /* ₹50 */,
+          extraCost: 1_500 /* ₹15 */,
           sortOrder: 0,
           ...by,
         },
@@ -152,8 +151,8 @@ export async function seedSampleData(
           name: "Sticker",
           inputType: "text",
           maxLength: 30,
-          extraPrice: rupees(30),
-          extraCost: rupees(5),
+          extraPrice: 3_000 /* ₹30 */,
+          extraCost: 500 /* ₹5 */,
           sortOrder: 1,
           ...by,
         },
@@ -189,8 +188,8 @@ export async function seedSampleData(
           widthMm: 200,
           heightMm: 100,
           weightG: 350,
-          price: rupees(1200),
-          cost: rupees(450),
+          price: 120_000 /* ₹1200 */,
+          cost: 45_000 /* ₹450 */,
           ...by,
         },
         {
@@ -204,8 +203,8 @@ export async function seedSampleData(
           widthMm: 250,
           heightMm: 120,
           weightG: 420,
-          price: rupees(1650),
-          cost: rupees(600),
+          price: 165_000 /* ₹1650 */,
+          cost: 60_000 /* ₹600 */,
           ...by,
         },
         {
@@ -219,8 +218,8 @@ export async function seedSampleData(
           widthMm: 200,
           heightMm: 180,
           weightG: 800,
-          price: rupees(2499.5),
-          cost: rupees(950),
+          price: 249_950 /* ₹2499.50 */,
+          cost: 95_000 /* ₹950 */,
           ...by,
         },
         {
@@ -230,8 +229,8 @@ export async function seedSampleData(
           colourId: item("colour", "Emerald"),
           designId: item("design", "Plain"),
           weightG: 80,
-          price: rupees(350),
-          cost: rupees(120),
+          price: 35_000 /* ₹350 */,
+          cost: 12_000 /* ₹120 */,
           ...by,
         },
       ])

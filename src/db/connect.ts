@@ -9,3 +9,7 @@ export function connect(url: string) {
 }
 
 export type Database = ReturnType<typeof connect>;
+
+/** The database, or a transaction from `db.transaction(async (tx) => …)`. */
+export type Executor =
+  Database | Parameters<Parameters<Database["transaction"]>[0]>[0];
