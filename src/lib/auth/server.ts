@@ -3,6 +3,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { username } from "better-auth/plugins";
+import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import * as schema from "@/db/schema";
 import {
@@ -11,6 +12,7 @@ import {
   SIGN_IN_LIMIT,
 } from "@/db/sign-in-attempts";
 import { getServerEnv } from "@/lib/env";
+import { ACCOUNT_DEACTIVATED } from "./errors";
 
 const env = getServerEnv();
 
@@ -33,7 +35,13 @@ export const auth = betterAuth({
   // other origin is rejected (CSRF protection).
   trustedOrigins: env.TRUSTED_ORIGINS,
   database: drizzleAdapter(db, { provider: "pg", schema }),
-  user: { modelName: "users" },
+  user: {
+    modelName: "users",
+    additionalFields: {
+      // Read-only through the auth API (input: false); set by Settings → Users.
+      deactivatedAt: { type: "date", required: false, input: false },
+    },
+  },
   session: {
     modelName: "sessions",
     expiresIn: 60 * 60 * 24 * 30, // 30 days: phones stay signed in
@@ -62,6 +70,27 @@ export const auth = betterAuth({
     ipAddress: {
       ipAddressHeaders: env.CLIENT_IP_HEADERS,
       trustedProxies: env.TRUSTED_PROXIES,
+    },
+  },
+  databaseHooks: {
+    session: {
+      create: {
+        // The one place every sign-in path goes through: deactivated users get no
+        // session. Runs after the password check, so it only tells someone who knows
+        // the password that the account is deactivated.
+        before: async (session) => {
+          const user = await db.query.users.findFirst({
+            columns: { deactivatedAt: true },
+            where: eq(schema.users.id, session.userId),
+          });
+          if (!user || user.deactivatedAt) {
+            throw new APIError("FORBIDDEN", {
+              message: "This account has been deactivated.",
+              code: ACCOUNT_DEACTIVATED,
+            });
+          }
+        },
+      },
     },
   },
   hooks: {

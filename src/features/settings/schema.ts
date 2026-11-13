@@ -161,3 +161,17 @@ export type CustomisationOptionInput = z.input<
 >;
 
 export const addChoiceSchema = z.object({ optionId: id, name: nameSchema });
+
+// --- General settings ----------------------------------------------------------
+
+/** Used until someone saves General settings (matches the app_settings default). */
+export const DEFAULT_DUE_SOON_DAYS = 3;
+
+export const generalSettingsSchema = z.object({
+  dueSoonDays: z
+    .string()
+    .trim()
+    .regex(/^\d{1,2}$/, "Enter a whole number of days from 0 to 60")
+    .transform(Number)
+    .pipe(z.number().max(60, "Enter a whole number of days from 0 to 60")),
+});

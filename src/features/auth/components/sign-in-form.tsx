@@ -6,13 +6,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth/client";
+import { ACCOUNT_DEACTIVATED } from "@/lib/auth/errors";
 import { toFormErrors } from "@/lib/validation";
 import { safeNextPath } from "../safe-next";
 import { signInSchema } from "../schema";
 
 type FieldErrors = { username?: string[]; password?: string[] };
 
-function signInErrorMessage(status: number): string {
+function signInErrorMessage(status: number, code?: string): string {
+  if (code === ACCOUNT_DEACTIVATED) {
+    return "This account has been deactivated. Ask someone with access to reactivate it.";
+  }
   if (status === 429) return "Too many attempts. Wait a minute and try again.";
   // Origin check: the app was opened at an address not in BETTER_AUTH_URL/TRUSTED_ORIGINS.
   if (status === 403) return "Signing in isn't allowed from this address.";
@@ -48,7 +52,7 @@ export function SignInForm() {
     );
     if (signInError) {
       setPending(false);
-      setError(signInErrorMessage(signInError.status));
+      setError(signInErrorMessage(signInError.status, signInError.code));
       return;
     }
     router.replace(safeNextPath(searchParams.get("next")));

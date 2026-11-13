@@ -34,6 +34,13 @@ const sections: { title: string; links: { href: string; label: string }[] }[] =
         },
       ],
     },
+    {
+      title: "General",
+      links: [
+        { href: "/settings/general", label: "General" },
+        { href: "/settings/users", label: "Users" },
+      ],
+    },
   ];
 
 export default function SettingsPage() {

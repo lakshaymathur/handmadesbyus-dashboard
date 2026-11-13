@@ -13,9 +13,11 @@ export type CurrentUser = { id: string; name: string; username: string };
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return null;
-  const { id, name, username } = session.user;
+  const { id, name, username, deactivatedAt } = session.user;
   // Typed optional by the username plugin, but NOT NULL in our users table.
   if (!username) return null;
+  // Deactivating deletes the user's sessions too; this covers any request in flight.
+  if (deactivatedAt) return null;
   return { id, name, username };
 });
 

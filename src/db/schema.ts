@@ -43,6 +43,9 @@ export const users = pgTable("users", {
   // Lower-cased by Better Auth. Required: every user signs in with one.
   username: text().notNull().unique(),
   displayUsername: text(),
+  // Set when the user is deactivated (Settings → Users): no new sessions, and existing
+  // ones are deleted and treated as signed out (src/lib/auth). Null = active.
+  deactivatedAt: timestamp({ withTimezone: true }),
   ...timestamps,
 });
 

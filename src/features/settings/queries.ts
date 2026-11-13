@@ -11,7 +11,12 @@ import {
 } from "@/db/schema";
 import { formatMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth/session";
-import { INPUT_TYPE_LABELS, type InputType, type ListKind } from "./schema";
+import {
+  DEFAULT_DUE_SOON_DAYS,
+  INPUT_TYPE_LABELS,
+  type InputType,
+  type ListKind,
+} from "./schema";
 
 export type ManagedItem = {
   id: string;
@@ -241,4 +246,15 @@ export async function getCustomisationOption(
     categoryIds: links.map((l) => l.categoryId),
     choices: choices.map((c) => ({ ...c, detail: null })),
   };
+}
+
+export type GeneralSettings = { dueSoonDays: number };
+
+/** App-wide settings, with defaults until someone saves them. */
+export async function getGeneralSettings(): Promise<GeneralSettings> {
+  await requireUser();
+  const row = await db.query.appSettings.findFirst({
+    columns: { dueSoonDays: true },
+  });
+  return { dueSoonDays: row?.dueSoonDays ?? DEFAULT_DUE_SOON_DAYS };
 }

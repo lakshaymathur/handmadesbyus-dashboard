@@ -15,6 +15,13 @@
       "when": 1794596858433,
       "tag": "0001_core_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794598838507,
+      "tag": "0002_user_deactivation",
+      "breakpoints": true
     }
   ]
 }

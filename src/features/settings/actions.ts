@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { foreignKeyViolation, uniqueViolation } from "@/db/errors";
 import {
+  appSettings,
   categories,
   customisationChoices,
   customisationOptionCategories,
@@ -25,6 +26,7 @@ import {
   addStageSchema,
   deliveryPartnerSchema,
   FIRST_STAGE_NAME,
+  generalSettingsSchema,
   idSchema,
   moveSchema,
   renameSchema,
@@ -630,6 +632,23 @@ export const moveChoice = authedAction(
           .where(eq(customisationChoices.id, rowId)),
       );
     });
+    refresh();
+  },
+);
+
+// --- General settings ---------------------------------------------------------------
+
+export const updateGeneralSettings = authedAction(
+  generalSettingsSchema,
+  async ({ dueSoonDays }, { audit }) => {
+    // app_settings has one row (id = 1); the first save creates it.
+    await db
+      .insert(appSettings)
+      .values({ id: 1, dueSoonDays, ...audit.create })
+      .onConflictDoUpdate({
+        target: appSettings.id,
+        set: { dueSoonDays, ...audit.update },
+      });
     refresh();
   },
 );
