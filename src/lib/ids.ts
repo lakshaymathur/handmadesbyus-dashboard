@@ -1,7 +1,7 @@
-import { istYearMonth } from "./dates";
+import { isDateOnly, istYearMonth, type DateOnly } from "./dates";
 
 // Readable IDs shown to people: customers C-0001, orders HMU-YYMM-#### (IST year-month).
-// The numbers come from per-kind counters in the database (allocated atomically, M1);
+// The numbers come from per-series counters in the database (src/db/id-counters.ts);
 // this module only formats and reads them.
 
 function assertSequence(seq: number): void {
@@ -25,14 +25,28 @@ export function parseCustomerId(text: string): number | null {
   return seq >= 1 ? seq : null;
 }
 
-/** "HMU-2611" for an order placed in November 2026 (IST). */
-export function orderIdPrefix(placedAt: Date): string {
-  const { year, month } = istYearMonth(placedAt);
+/**
+ * "HMU-2611" for an order in November 2026: from an order date ("2026-11-14", already an
+ * IST calendar date) or a moment (converted to IST).
+ */
+export function orderIdPrefix(placedAt: Date | DateOnly): string {
+  const { year, month } = yearMonth(placedAt);
   return `HMU-${String(year % 100).padStart(2, "0")}${String(month).padStart(2, "0")}`;
 }
 
+function yearMonth(placedAt: Date | DateOnly): { year: number; month: number } {
+  if (placedAt instanceof Date) return istYearMonth(placedAt);
+  if (!isDateOnly(placedAt)) {
+    throw new RangeError(`Not a YYYY-MM-DD date: ${placedAt}`);
+  }
+  return {
+    year: Number(placedAt.slice(0, 4)),
+    month: Number(placedAt.slice(5, 7)),
+  };
+}
+
 /** The 42nd order of November 2026 (IST) → "HMU-2611-0042". */
-export function formatOrderId(placedAt: Date, seq: number): string {
+export function formatOrderId(placedAt: Date | DateOnly, seq: number): string {
   assertSequence(seq);
   return `${orderIdPrefix(placedAt)}-${String(seq).padStart(4, "0")}`;
 }

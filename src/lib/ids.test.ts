@@ -52,6 +52,12 @@ describe("order IDs", () => {
     expect(orderIdPrefix(new Date("2026-11-30T19:30:00Z"))).toBe("HMU-2612");
   });
 
+  it("takes an order date (an IST calendar date) as well as a moment", () => {
+    expect(orderIdPrefix("2026-12-01")).toBe("HMU-2612");
+    expect(formatOrderId("2027-01-31", 3)).toBe("HMU-2701-0003");
+    expect(() => orderIdPrefix("2026-02-30")).toThrow(RangeError);
+  });
+
   it("refuses an invalid sequence", () => {
     expect(() => formatOrderId(nov2026, 0)).toThrow(RangeError);
   });
