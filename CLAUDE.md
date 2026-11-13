@@ -16,8 +16,8 @@ Next.js 16 (App Router; APIs differ from older versions, so check `node_modules/
 > Commands marked *(planned)* don't exist until milestone M0 is done. Update this list when they change.
 - `cp .env.example .env` once, then `docker compose up -d --wait`: start Postgres 17 (dev + test DBs) and SeaweedFS S3 on localhost. Data in `.docker-data/` (delete it to start fresh)
 - `npm run dev`: app at http://localhost:3000 · `npm run build`: standalone build in `.next/standalone`
-- `npm run db:generate` / `npm run db:migrate`: Drizzle migrations *(planned)*
-- `npm run db:seed`: load sample data · `npm run db:reset`: wipe + migrate + seed *(planned)*
+- `npm run db:generate`: write a migration from `src/db/schema.ts` · `npm run db:migrate`: apply migrations · `npm run db:studio`: browse data
+- `npm run db:seed`: load sample data · `npm run db:reset`: wipe + migrate + seed (refuses non-local hosts)
 - `npm run lint` · `npm run typecheck` (`next typegen` + `tsc`) · `npm run format` / `format:check` (Markdown is excluded)
 - `npm test`: unit tests · `npm run test:integration`: against the test Postgres (DB wiring *(planned)*)
 
@@ -34,7 +34,7 @@ src/
 ```
 
 ## Hard rules
-- **Portability**: plain Postgres + S3 API only. No Supabase/Vercel/AWS-specific SDKs or features. All config comes from env vars, documented in `.env.example`.
+- **Portability**: plain Postgres + S3 API only. No Supabase/Vercel/AWS-specific SDKs or features. All config comes from env vars, documented in `.env.example` and validated in `lib/env.ts` (add new ones to both).
 - **Money**: store as integer **paise**. Format with `lib/money` (₹1,23,456). Dates are shown as DD/MM/YYYY in IST.
 - **Snapshots**: order items copy unit price, unit cost and customisation prices at order time. Orders copy the delivery address. Never recompute history from the current catalogue.
 - **Status changes** (order status and item production stage) always go through one function that also writes a `status_history` row.

@@ -51,6 +51,17 @@ const eslintConfig = defineConfig([
   eslintComments.recommended,
   {
     rules: {
+      // Unused code is an error; `_name` and `{ dropped, ...rest }` mark deliberate ones.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          destructuredArrayIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+        },
+      ],
       // `any` / `@ts-ignore` only with a written reason (CLAUDE.md).
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/ban-ts-comment": [
