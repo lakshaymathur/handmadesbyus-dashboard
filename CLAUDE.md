@@ -17,7 +17,7 @@ Next.js 16 (App Router; APIs differ from older versions, so check `node_modules/
 - `cp .env.example .env` once, then `docker compose up -d --wait`: start Postgres 17 (dev + test DBs) and SeaweedFS S3 on localhost. Data in `.docker-data/` (delete it to start fresh)
 - `npm run dev`: app at http://localhost:3000 · `npm run build`: standalone build in `.next/standalone`
 - `npm run db:generate`: write a migration from `src/db/schema.ts` · `npm run db:migrate`: apply migrations · `npm run db:studio`: browse data
-- `npm run db:seed`: create the first login user from `SEED_USER_*` (sample data from M1) · `npm run db:reset`: wipe + migrate + seed (refuses non-local hosts)
+- `npm run db:seed`: create the first login user from `SEED_USER_*` (sample data from M1) · `npm run db:reset`: wipe + migrate + seed (only local databases with the `disposable-local` comment, set by `docker/postgres/init`)
 - `npm run lint` · `npm run typecheck` (`next typegen` + `tsc`) · `npm run format` / `format:check` (Markdown is excluded)
 - `npm test`: unit tests · `npm run test:integration`: against the test Postgres (needs Docker up). Each run wipes and re-migrates `TEST_DATABASE_URL`; every test starts with empty tables; the app's `db` points at the test DB
 

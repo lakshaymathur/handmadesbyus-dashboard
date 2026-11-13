@@ -6,6 +6,7 @@
 // Inline "use server" functions (which would skip the wrapper) are reported anywhere.
 
 const WRAPPER = "authedAction";
+const WRAPPER_MODULE = "@/lib/auth/action";
 
 /** @param {import("estree").Node | null | undefined} node */
 function isUseServer(node) {
@@ -16,12 +17,43 @@ function isUseServer(node) {
   );
 }
 
-/** @param {import("estree").Node | null | undefined} init */
-function isWrapperCall(init) {
+/**
+ * Local names bound to the real wrapper: `import { authedAction } from "@/lib/auth/action"`
+ * (or `as alias`). A same-named helper defined or imported elsewhere doesn't count.
+ * @param {import("estree").Program["body"]} body
+ */
+function wrapperNames(body) {
+  const names = new Set();
+  for (const stmt of body) {
+    if (
+      stmt.type !== "ImportDeclaration" ||
+      stmt.source.value !== WRAPPER_MODULE
+    )
+      continue;
+    if (/** @type {any} */ (stmt).importKind === "type") continue;
+    for (const spec of stmt.specifiers) {
+      if (
+        spec.type === "ImportSpecifier" &&
+        /** @type {any} */ (spec).importKind !== "type" &&
+        spec.imported.type === "Identifier" &&
+        spec.imported.name === WRAPPER
+      ) {
+        names.add(spec.local.name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * @param {import("estree").Node | null | undefined} init
+ * @param {Set<string>} names
+ */
+function isWrapperCall(init, names) {
   return (
     init?.type === "CallExpression" &&
     init.callee.type === "Identifier" &&
-    init.callee.name === WRAPPER
+    names.has(init.callee.name)
   );
 }
 
@@ -36,7 +68,7 @@ const rule = {
     schema: [],
     messages: {
       notWrapped:
-        'Server actions must be `export const {{name}} = authedAction(schema, handler)` (from "@/lib/auth/action").',
+        'Server actions must be `export const {{name}} = authedAction(schema, handler)`, with authedAction imported from "@/lib/auth/action".',
       noReexport:
         'Don\'t re-export from a "use server" file: export each action as `export const x = authedAction(...)` so the check can see it.',
       noDefault:
@@ -57,6 +89,8 @@ const rule = {
         break;
       if (isUseServer(stmt)) isActionFile = true;
     }
+
+    const wrappers = wrapperNames(body);
 
     /** @param {import("estree").Node & { body?: any }} fn */
     function checkInlineDirective(fn) {
@@ -99,7 +133,7 @@ const rule = {
         }
         if (decl.type === "VariableDeclaration" && decl.kind === "const") {
           for (const d of decl.declarations) {
-            if (!isWrapperCall(d.init)) {
+            if (!isWrapperCall(d.init, wrappers)) {
               const name = d.id.type === "Identifier" ? d.id.name : "action";
               context.report({
                 node: d,

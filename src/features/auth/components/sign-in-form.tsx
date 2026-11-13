@@ -2,15 +2,25 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth/client";
+import { toFormErrors } from "@/lib/validation";
 import { safeNextPath } from "../safe-next";
 import { signInSchema } from "../schema";
 
 type FieldErrors = { username?: string[]; password?: string[] };
+
+function signInErrorMessage(status: number): string {
+  if (status === 429) return "Too many attempts. Wait a minute and try again.";
+  // Origin check: the app was opened at an address not in BETTER_AUTH_URL/TRUSTED_ORIGINS.
+  if (status === 403) return "Signing in isn't allowed from this address.";
+  if (status === 0 || status >= 500)
+    return "Couldn't reach the server. Try again.";
+  // 401 wrong password; 400/422 invalid username format.
+  return "Wrong username or password.";
+}
 
 export function SignInForm() {
   const router = useRouter();
@@ -28,7 +38,7 @@ export function SignInForm() {
       password: form.get("password"),
     });
     if (!parsed.success) {
-      setFieldErrors(z.flattenError(parsed.error).fieldErrors);
+      setFieldErrors(toFormErrors(parsed.error).fieldErrors);
       return;
     }
     setFieldErrors({});
@@ -38,11 +48,7 @@ export function SignInForm() {
     );
     if (signInError) {
       setPending(false);
-      setError(
-        signInError.status === 429
-          ? "Too many attempts. Wait a minute and try again."
-          : "Wrong username or password.",
-      );
+      setError(signInErrorMessage(signInError.status));
       return;
     }
     router.replace(safeNextPath(searchParams.get("next")));
@@ -50,7 +56,15 @@ export function SignInForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
+    // method="post": if JavaScript hasn't loaded (slow network, script error), the browser
+    // submits the form itself. With the default GET that would put the password in the URL,
+    // browser history and server logs.
+    <form
+      method="post"
+      onSubmit={onSubmit}
+      noValidate
+      className="flex flex-col gap-4"
+    >
       <div className="flex flex-col gap-2">
         <Label htmlFor="username">Username</Label>
         <Input

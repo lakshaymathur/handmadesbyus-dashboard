@@ -28,9 +28,14 @@ export function formatMoney(paise: number): string {
     : `${sign}${rupees}.${String(rest).padStart(2, "0")}`;
 }
 
-// Optional ₹ sign and minus, digits with optional (Indian or Western) commas, up to 2 decimals.
-const MONEY_INPUT =
-  /^(-)?\s*(?:₹|rs\.?|inr)?\s*(\d{1,3}(?:,\d{2,3})*|\d+)(?:\.(\d{1,2}))?$/i;
+// Optional minus and ₹/Rs/INR, then the rupees, then up to 2 decimals. Rupees are plain
+// digits or correctly grouped: Indian 1,23,456 (groups of 2, last of 3) or Western
+// 123,456 (groups of 3). Anything else ("12,34", "1,000,00") is ambiguous: reject it.
+const RUPEES = String.raw`\d+|\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})*,\d{3}`;
+const MONEY_INPUT = new RegExp(
+  String.raw`^(-)?\s*(?:₹|rs\.?|inr)?\s*(${RUPEES})(?:\.(\d{1,2}))?$`,
+  "i",
+);
 
 /**
  * Converts what someone typed ("1,23,456", "₹ 1234.5", "Rs. 500") into paise.

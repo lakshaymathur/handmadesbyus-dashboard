@@ -1,11 +1,13 @@
 import { z } from "zod";
+import { newPasswordSchema, usernameSchema } from "@/features/auth/schema";
+import { parseEnv } from "@/lib/env";
 import { connect } from "./connect";
 import { createUserWithPassword } from "./users";
 
 const seedEnvSchema = z.object({
-  SEED_USER_USERNAME: z.string().trim().min(3),
+  SEED_USER_USERNAME: usernameSchema,
   SEED_USER_NAME: z.string().trim().min(1),
-  SEED_USER_PASSWORD: z.string().min(10, "must be at least 10 characters"),
+  SEED_USER_PASSWORD: newPasswordSchema,
 });
 
 /**
@@ -14,16 +16,11 @@ const seedEnvSchema = z.object({
  * arrives with M1.
  */
 export async function seed(url: string): Promise<void> {
-  const parsed = seedEnvSchema.safeParse(process.env);
-  if (!parsed.success) {
-    const names = parsed.error.issues.map(
-      (i) => `  ${i.path.join(".")}: ${i.message}`,
-    );
-    throw new Error(
-      `Seed settings missing or invalid (see .env.example):\n${names.join("\n")}`,
-    );
-  }
-  const env = parsed.data;
+  const env = parseEnv(
+    seedEnvSchema,
+    process.env,
+    "Seed settings missing or invalid",
+  );
 
   const db = connect(url);
   try {

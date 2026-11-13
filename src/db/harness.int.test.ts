@@ -46,3 +46,21 @@ describe("integration test harness", () => {
     });
   });
 });
+
+describe("reset refuses databases that aren't marked disposable", () => {
+  it("won't wipe a local database without the disposable-local comment", async () => {
+    const { resetDatabase } = await import("./reset");
+    const probe = "hmu_unmarked_probe";
+    await db.execute(sql.raw(`DROP DATABASE IF EXISTS ${probe}`));
+    await db.execute(sql.raw(`CREATE DATABASE ${probe}`));
+    try {
+      const url = new URL(process.env.TEST_DATABASE_URL ?? "");
+      url.pathname = `/${probe}`;
+      await expect(
+        resetDatabase(url.toString(), { seed: false }),
+      ).rejects.toThrow(/isn't marked as a disposable local database/);
+    } finally {
+      await db.execute(sql.raw(`DROP DATABASE IF EXISTS ${probe}`));
+    }
+  });
+});

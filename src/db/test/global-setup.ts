@@ -1,16 +1,7 @@
 // Vitest global setup for the integration project: runs once per `npm run test:integration`.
 // Wipes the test database and applies every migration fresh, so the schema always matches
 // src/db/migrations, even if a migration was regenerated during development.
-import { assertLocalDatabase, resetDatabase } from "../reset";
-
-/** Same server, port and database name? (Credentials and options don't matter.) */
-function sameDatabase(a: string, b: string): boolean {
-  const x = new URL(a);
-  const y = new URL(b);
-  return (
-    x.hostname === y.hostname && x.port === y.port && x.pathname === y.pathname
-  );
-}
+import { assertLocalDatabase, isSameDatabase, resetDatabase } from "../reset";
 
 /** Drizzle wraps driver errors, so look for ECONNREFUSED anywhere in the `cause` chain. */
 function isConnectionRefused(error: unknown): boolean {
@@ -29,7 +20,7 @@ export default async function setup(): Promise<void> {
   }
   assertLocalDatabase(testUrl);
   const devUrl = process.env.DEV_DATABASE_URL;
-  if (devUrl && sameDatabase(testUrl, devUrl)) {
+  if (devUrl && isSameDatabase(testUrl, devUrl)) {
     throw new Error(
       "TEST_DATABASE_URL points at the same database as DATABASE_URL. Tests wipe it, so use a separate database.",
     );

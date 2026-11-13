@@ -57,6 +57,48 @@ describe("parseServerEnv", () => {
     ).toThrowError(/BETTER_AUTH_SECRET: must be at least 32 characters/);
   });
 
+  it("treats an empty optional setting as unset and uses its default", () => {
+    const env = parseServerEnv({
+      ...valid,
+      S3_FORCE_PATH_STYLE: "",
+      TRUSTED_ORIGINS: "",
+    });
+    expect(env.S3_FORCE_PATH_STYLE).toBe(false);
+    expect(env.TRUSTED_ORIGINS).toEqual([]);
+  });
+
+  it("reads TRUSTED_ORIGINS as a list of origins", () => {
+    const env = parseServerEnv({
+      ...valid,
+      TRUSTED_ORIGINS: "http://192.168.1.11:3000, https://dash.example.com/",
+    });
+    expect(env.TRUSTED_ORIGINS).toEqual([
+      "http://192.168.1.11:3000",
+      "https://dash.example.com",
+    ]);
+  });
+
+  it("rejects a trusted origin with a path", () => {
+    expect(() =>
+      parseServerEnv({
+        ...valid,
+        TRUSTED_ORIGINS: "https://dash.example.com/app",
+      }),
+    ).toThrowError(/TRUSTED_ORIGINS: must be an origin/);
+  });
+
+  it("defaults the client IP header and reads trusted proxies", () => {
+    const env = parseServerEnv({
+      ...valid,
+      TRUSTED_PROXIES: "10.0.0.0/8, 172.17.0.1",
+    });
+    expect(env.CLIENT_IP_HEADERS).toEqual(["x-forwarded-for"]);
+    expect(env.TRUSTED_PROXIES).toEqual(["10.0.0.0/8", "172.17.0.1"]);
+    expect(() =>
+      parseServerEnv({ ...valid, TRUSTED_PROXIES: "not an ip" }),
+    ).toThrowError(/TRUSTED_PROXIES:/);
+  });
+
   it("rejects a non-boolean S3_FORCE_PATH_STYLE", () => {
     expect(() =>
       parseServerEnv({ ...valid, S3_FORCE_PATH_STYLE: "sometimes" }),

@@ -1,8 +1,12 @@
 import { unstable_rethrow } from "next/navigation";
 import { z } from "zod";
+import { toFormErrors } from "@/lib/validation";
 import { requireUser, type CurrentUser } from "./session";
 
-/** What every server action returns. `fieldErrors` keys match the form's Zod schema. */
+/**
+ * What every server action returns. `fieldErrors` keys are the field's path in the form's
+ * Zod schema, dotted for nested fields ("items.0.qty").
+ */
 export type ActionResult<T> =
   | { ok: true; data: T }
   | { ok: false; error: string; fieldErrors?: Record<string, string[]> };
@@ -49,13 +53,12 @@ export function authedAction<Schema extends z.ZodType, Data>(
 
     const parsed = schema.safeParse(input);
     if (!parsed.success) {
+      const { formErrors, fieldErrors } = toFormErrors(parsed.error);
       return {
         ok: false,
-        error: "Please check the highlighted fields.",
-        fieldErrors: z.flattenError(parsed.error).fieldErrors as Record<
-          string,
-          string[]
-        >,
+        // A whole-form message (object-level .refine) is more useful than the generic one.
+        error: formErrors[0] ?? "Please check the highlighted fields.",
+        fieldErrors,
       };
     }
 

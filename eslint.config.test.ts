@@ -123,6 +123,21 @@ describe("server actions must use authedAction()", () => {
     expect(await ruleIds(`${header}${exported}`, file)).toContain(RULE);
   });
 
+  it("rejects a look-alike authedAction that isn't the real import", async () => {
+    const local =
+      '"use server";\nconst authedAction = (_s: unknown, h: () => Promise<number>) => h;\nexport const deleteOrder = authedAction({}, async () => 1);';
+    const imported =
+      '"use server";\nimport { authedAction } from "@/lib/other";\nexport const deleteOrder = authedAction({}, async () => 1);';
+    expect(await ruleIds(local, file)).toContain(RULE);
+    expect(await ruleIds(imported, file)).toContain(RULE);
+  });
+
+  it("accepts the real wrapper under an alias", async () => {
+    const code =
+      '"use server";\nimport { authedAction as guarded } from "@/lib/auth/action";\nimport { z } from "zod";\nexport const createOrder = guarded(z.object({}), async () => 1);';
+    expect(await ruleIds(code, file)).not.toContain(RULE);
+  });
+
   it('rejects inline "use server" functions anywhere', async () => {
     const code =
       'export default function Page() {\n  async function save() {\n    "use server";\n  }\n  return save;\n}';

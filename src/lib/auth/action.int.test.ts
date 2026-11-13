@@ -55,6 +55,30 @@ describe("Better Auth setup", () => {
     expect((await signIn("asha", "wrong-password-123")).status).toBe(401);
   });
 
+  it("refuses to create users whose username sign-in would reject", async () => {
+    for (const username of ["Asha Rao", "asha@shop", "ab", "a".repeat(31)]) {
+      await expect(
+        createUserWithPassword(db, { username, name: "X", password: PASSWORD }),
+      ).rejects.toThrow();
+    }
+    await expect(
+      createUserWithPassword(db, {
+        username: "ravi",
+        name: "Ravi",
+        password: "short",
+      }),
+    ).rejects.toThrow(/at least 10/);
+  });
+
+  it("signs in a user created with dots and underscores", async () => {
+    await createUserWithPassword(db, {
+      username: "Ravi_K.2",
+      name: "Ravi",
+      password: PASSWORD,
+    });
+    expect((await signIn("ravi_k.2", PASSWORD)).status).toBe(200);
+  });
+
   it("has public sign-up disabled", async () => {
     const response = await auth.api.signUpEmail({
       body: {
@@ -112,6 +136,40 @@ describe("authedAction()", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it("returns whole-form and nested field errors", async () => {
+    await signIn("asha", PASSWORD);
+    const orderSchema = z
+      .object({
+        items: z.array(z.object({ qty: z.number().min(1, "At least 1") })),
+        discount: z.number(),
+        subtotal: z.number(),
+      })
+      .refine(
+        (o) => o.discount <= o.subtotal,
+        "Discount can't exceed the subtotal",
+      );
+    const action = authedAction(orderSchema, async () => "saved");
+
+    expect(
+      await action({ items: [{ qty: 1 }], discount: 50, subtotal: 10 }),
+    ).toEqual({
+      ok: false,
+      error: "Discount can't exceed the subtotal",
+      fieldErrors: {},
+    });
+    expect(
+      await action({
+        items: [{ qty: 1 }, { qty: 0 }],
+        discount: 0,
+        subtotal: 10,
+      }),
+    ).toEqual({
+      ok: false,
+      error: "Please check the highlighted fields.",
+      fieldErrors: { "items.1.qty": ["At least 1"] },
+    });
+  });
+
   it("passes parsed input, the user and audit fields to the handler", async () => {
     await signIn("asha", PASSWORD);
     const result = await authedAction(schema, async (input, ctx) => ({
@@ -161,5 +219,68 @@ describe("authedAction()", () => {
     });
     expect(log).toHaveBeenCalled();
     log.mockRestore();
+  });
+});
+
+describe("sign-in rate limiting", () => {
+  // Through the HTTP handler, as a browser would hit it (auth.api calls skip rate limits).
+  async function attempt(ip: string): Promise<number> {
+    const response = await auth.handler(
+      new Request("http://localhost:3000/api/auth/sign-in/username", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost:3000",
+          "x-forwarded-for": ip,
+        },
+        body: JSON.stringify({
+          username: "asha",
+          password: "wrong-password-123",
+        }),
+      }),
+    );
+    return response.status;
+  }
+
+  beforeEach(async () => {
+    await createUserWithPassword(db, {
+      username: "asha",
+      name: "Asha",
+      password: PASSWORD,
+    });
+  });
+
+  it("blocks the 4th attempt within 10 seconds from the same IP, per IP", async () => {
+    const statuses = [];
+    for (let i = 0; i < 4; i++) statuses.push(await attempt("203.0.113.5"));
+    expect(statuses).toEqual([401, 401, 401, 429]);
+    // Someone else, from another address, isn't locked out.
+    expect(await attempt("198.51.100.7")).toBe(401);
+  });
+
+  // Origins are checked on requests that carry cookies (a signed-in browser); a first
+  // sign-in is protected by the browser's fetch-metadata headers instead.
+  async function postWithCookie(origin: string): Promise<number> {
+    const response = await auth.handler(
+      new Request("http://localhost:3000/api/auth/sign-out", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin,
+          cookie: "better-auth.session_token=anything",
+          "x-forwarded-for": "203.0.113.9",
+        },
+        body: "{}",
+      }),
+    );
+    return response.status;
+  }
+
+  it("rejects cookie-carrying requests from an untrusted origin", async () => {
+    expect(await postWithCookie("http://evil.example")).toBe(403);
+  });
+
+  it("accepts them from the app's own origin", async () => {
+    expect(await postWithCookie("http://localhost:3000")).toBe(200);
   });
 });

@@ -16,6 +16,9 @@ export const auth = betterAuth({
   appName: "HandMadesByUs",
   secret: env.BETTER_AUTH_SECRET,
   baseURL: env.BETTER_AUTH_URL,
+  // Other addresses the app is opened at (e.g. a phone on the LAN); sign-in from any
+  // other origin is rejected (CSRF protection).
+  trustedOrigins: env.TRUSTED_ORIGINS,
   database: drizzleAdapter(db, { provider: "pg", schema }),
   user: { modelName: "users" },
   session: {
@@ -31,9 +34,22 @@ export const auth = betterAuth({
     minPasswordLength: 10,
   },
   rateLimit: {
-    // On in production by default; stored in Postgres so limits survive restarts.
+    // On everywhere (not just production) so it's tested. Per client IP; sign-in allows
+    // 3 attempts per 10 seconds. Stored in Postgres so limits survive restarts.
+    enabled: true,
     storage: "database",
     modelName: "rateLimits",
+  },
+  advanced: {
+    // Better Auth skips origin (CSRF) checks under test by default; keep them on so tests
+    // see what production does.
+    disableOriginCheck: false,
+    // Where the client IP comes from. Without one, Better Auth falls back to a single
+    // shared bucket, so one person's failed attempts would lock everyone out.
+    ipAddress: {
+      ipAddressHeaders: env.CLIENT_IP_HEADERS,
+      trustedProxies: env.TRUSTED_PROXIES,
+    },
   },
   telemetry: { enabled: false },
   plugins: [
