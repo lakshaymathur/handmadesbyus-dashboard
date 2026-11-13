@@ -2,10 +2,14 @@
 
 import { asc, eq, max } from "drizzle-orm";
 import { refresh } from "next/cache";
+import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { foreignKeyViolation, uniqueViolation } from "@/db/errors";
 import {
   categories,
+  customisationChoices,
+  customisationOptionCategories,
+  customisationOptions,
   deliveryPartners,
   listItems,
   productionStages,
@@ -14,6 +18,9 @@ import { ActionError, authedAction } from "@/lib/auth/action";
 import { moveInList } from "./reorder";
 import {
   addCategorySchema,
+  addChoiceSchema,
+  customisationOptionSchema,
+  updateCustomisationOptionSchema,
   addListItemSchema,
   addStageSchema,
   deliveryPartnerSchema,
@@ -406,3 +413,223 @@ export const deleteStage = authedAction(idSchema, async ({ id }) => {
   }
   refresh();
 });
+
+// --- Customisation options (§2.3) --------------------------------------------------
+// Options and their choices deactivate (order items keep pointing at them). Price and
+// cost changes only affect new orders: order items snapshot them.
+
+type OptionValues = {
+  name: string;
+  inputType: "none" | "text" | "choice";
+  maxLength: number | null;
+  extraPrice: number;
+  extraCost: number;
+};
+
+/** Replaces the option's categories. A category deleted meanwhile is a 23503. */
+async function setOptionCategories(
+  tx: Transaction,
+  optionId: string,
+  categoryIds: string[],
+  createdBy: { createdBy: string; updatedBy: string },
+): Promise<void> {
+  await tx
+    .delete(customisationOptionCategories)
+    .where(eq(customisationOptionCategories.optionId, optionId));
+  if (categoryIds.length === 0) return;
+  await tx
+    .insert(customisationOptionCategories)
+    .values(
+      categoryIds.map((categoryId) => ({ optionId, categoryId, ...createdBy })),
+    );
+}
+
+/** saveName, plus a clear message if a picked category no longer exists. */
+async function saveOption(write: () => Promise<unknown>): Promise<void> {
+  try {
+    await saveName(write);
+  } catch (error) {
+    if (foreignKeyViolation(error) !== null) {
+      throw new ActionError(
+        "One of the categories no longer exists. Reload the page.",
+      );
+    }
+    throw error;
+  }
+}
+
+export const createCustomisationOption = authedAction(
+  customisationOptionSchema,
+  async ({ categoryIds, ...values }, { audit }) => {
+    let id = "";
+    await saveOption(() =>
+      db.transaction(async (tx) => {
+        const [last] = await tx
+          .select({ value: max(customisationOptions.sortOrder) })
+          .from(customisationOptions);
+        const [option] = await tx
+          .insert(customisationOptions)
+          .values({
+            ...(values satisfies OptionValues),
+            sortOrder: (last?.value ?? -1) + 1,
+            ...audit.create,
+          })
+          .returning({ id: customisationOptions.id });
+        if (!option) throw new Error("Option insert returned no row");
+        id = option.id;
+        await setOptionCategories(tx, id, categoryIds, audit.create);
+      }),
+    );
+    // On to the option's page, where choices are added.
+    redirect(`/settings/customisations/${id}`);
+  },
+);
+
+export const updateCustomisationOption = authedAction(
+  updateCustomisationOptionSchema,
+  async ({ id, categoryIds, ...values }, { audit }) => {
+    await saveOption(() =>
+      db.transaction(async (tx) => {
+        assertFound(
+          await tx
+            .update(customisationOptions)
+            .set({ ...(values satisfies OptionValues), ...audit.update })
+            .where(eq(customisationOptions.id, id))
+            .returning({ id: customisationOptions.id }),
+        );
+        await setOptionCategories(tx, id, categoryIds, audit.create);
+      }),
+    );
+    refresh();
+  },
+);
+
+export const setCustomisationOptionActive = authedAction(
+  setActiveSchema,
+  async ({ id, active }, { audit }) => {
+    assertFound(
+      await db
+        .update(customisationOptions)
+        .set({ active, ...audit.update })
+        .where(eq(customisationOptions.id, id))
+        .returning({ id: customisationOptions.id }),
+    );
+    refresh();
+  },
+);
+
+export const moveCustomisationOption = authedAction(
+  moveSchema,
+  async ({ id, direction }, { audit }) => {
+    await db.transaction(async (tx) => {
+      const siblings = await tx
+        .select({
+          id: customisationOptions.id,
+          position: customisationOptions.sortOrder,
+        })
+        .from(customisationOptions)
+        .orderBy(
+          asc(customisationOptions.sortOrder),
+          asc(customisationOptions.name),
+        )
+        .for("update");
+      await applyMove(siblings, id, direction, (rowId, position) =>
+        tx
+          .update(customisationOptions)
+          .set({ sortOrder: position, ...audit.update })
+          .where(eq(customisationOptions.id, rowId)),
+      );
+    });
+    refresh();
+  },
+);
+
+function lockChoices(tx: Transaction, optionId: string) {
+  return tx
+    .select({
+      id: customisationChoices.id,
+      position: customisationChoices.sortOrder,
+    })
+    .from(customisationChoices)
+    .where(eq(customisationChoices.optionId, optionId))
+    .orderBy(
+      asc(customisationChoices.sortOrder),
+      asc(customisationChoices.name),
+    )
+    .for("update");
+}
+
+export const addChoice = authedAction(
+  addChoiceSchema,
+  async ({ optionId, name }, { audit }) => {
+    await saveName(() =>
+      db.transaction(async (tx) => {
+        const [option] = await tx
+          .select({ id: customisationOptions.id })
+          .from(customisationOptions)
+          .where(eq(customisationOptions.id, optionId))
+          .for("update");
+        if (!option) throw new ActionError(GONE);
+        const choices = await lockChoices(tx, optionId);
+        await tx.insert(customisationChoices).values({
+          optionId,
+          name,
+          sortOrder: Math.max(-1, ...choices.map((c) => c.position)) + 1,
+          ...audit.create,
+        });
+      }),
+    );
+    refresh();
+  },
+);
+
+export const renameChoice = authedAction(
+  renameSchema,
+  async ({ id, name }, { audit }) => {
+    await saveName(async () =>
+      assertFound(
+        await db
+          .update(customisationChoices)
+          .set({ name, ...audit.update })
+          .where(eq(customisationChoices.id, id))
+          .returning({ id: customisationChoices.id }),
+      ),
+    );
+    refresh();
+  },
+);
+
+export const setChoiceActive = authedAction(
+  setActiveSchema,
+  async ({ id, active }, { audit }) => {
+    assertFound(
+      await db
+        .update(customisationChoices)
+        .set({ active, ...audit.update })
+        .where(eq(customisationChoices.id, id))
+        .returning({ id: customisationChoices.id }),
+    );
+    refresh();
+  },
+);
+
+export const moveChoice = authedAction(
+  moveSchema,
+  async ({ id, direction }, { audit }) => {
+    await db.transaction(async (tx) => {
+      const [choice] = await tx
+        .select({ optionId: customisationChoices.optionId })
+        .from(customisationChoices)
+        .where(eq(customisationChoices.id, id));
+      if (!choice) throw new ActionError(GONE);
+      const siblings = await lockChoices(tx, choice.optionId);
+      await applyMove(siblings, id, direction, (rowId, position) =>
+        tx
+          .update(customisationChoices)
+          .set({ sortOrder: position, ...audit.update })
+          .where(eq(customisationChoices.id, rowId)),
+      );
+    });
+    refresh();
+  },
+);

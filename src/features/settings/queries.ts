@@ -2,12 +2,16 @@ import { asc, count, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   categories,
+  customisationChoices,
+  customisationOptionCategories,
+  customisationOptions,
   deliveryPartners,
   listItems,
   productionStages,
 } from "@/db/schema";
+import { formatMoney } from "@/lib/money";
 import { requireUser } from "@/lib/auth/session";
-import type { ListKind } from "./schema";
+import { INPUT_TYPE_LABELS, type InputType, type ListKind } from "./schema";
 
 export type ManagedItem = {
   id: string;
@@ -104,5 +108,137 @@ export async function getCategoryWithStages(
       active: true,
       detail: stageRole(index, stages.length),
     })),
+  };
+}
+
+/** Option → names of the categories it applies to, in category order. */
+async function optionCategoryNames(): Promise<Map<string, string[]>> {
+  const rows = await db
+    .select({
+      optionId: customisationOptionCategories.optionId,
+      name: categories.name,
+    })
+    .from(customisationOptionCategories)
+    .innerJoin(
+      categories,
+      eq(categories.id, customisationOptionCategories.categoryId),
+    )
+    .orderBy(asc(categories.sortOrder), asc(categories.name));
+  const byOption = new Map<string, string[]>();
+  for (const { optionId, name } of rows) {
+    byOption.set(optionId, [...(byOption.get(optionId) ?? []), name]);
+  }
+  return byOption;
+}
+
+/** "Choice from a list · +₹50 (cost ₹20) · Box, Pouch" */
+export function describeOption(option: {
+  inputType: InputType;
+  maxLength: number | null;
+  extraPrice: number;
+  extraCost: number;
+  categoryNames: string[];
+}): string {
+  const input =
+    option.inputType === "text"
+      ? `Text, up to ${option.maxLength} characters`
+      : INPUT_TYPE_LABELS[option.inputType];
+  const money = `+${formatMoney(option.extraPrice)} (cost ${formatMoney(option.extraCost)})`;
+  const where =
+    option.categoryNames.length > 0
+      ? option.categoryNames.join(", ")
+      : "No categories yet";
+  return [input, money, where].join(" · ");
+}
+
+/** Customisation options in display order, each linking to its page. */
+export async function getCustomisationOptions(): Promise<ManagedItem[]> {
+  await requireUser();
+  const [options, names] = await Promise.all([
+    db
+      .select()
+      .from(customisationOptions)
+      .orderBy(
+        asc(customisationOptions.sortOrder),
+        asc(customisationOptions.name),
+      ),
+    optionCategoryNames(),
+  ]);
+  return options.map((option) => ({
+    id: option.id,
+    name: option.name,
+    active: option.active,
+    detail: describeOption({
+      ...option,
+      categoryNames: names.get(option.id) ?? [],
+    }),
+    href: `/settings/customisations/${option.id}`,
+  }));
+}
+
+export type CategoryChoice = { id: string; name: string; active: boolean };
+
+/** Categories an option can apply to (inactive ones included, for options that use them). */
+export async function getCategoryChoices(): Promise<CategoryChoice[]> {
+  await requireUser();
+  return db
+    .select({
+      id: categories.id,
+      name: categories.name,
+      active: categories.active,
+    })
+    .from(categories)
+    .orderBy(asc(categories.sortOrder), asc(categories.name));
+}
+
+export type CustomisationOptionDetail = {
+  id: string;
+  name: string;
+  active: boolean;
+  inputType: InputType;
+  maxLength: number | null;
+  extraPrice: number;
+  extraCost: number;
+  categoryIds: string[];
+  choices: ManagedItem[];
+};
+
+/** One option with its categories and choices, or null if there's no such option. */
+export async function getCustomisationOption(
+  id: string,
+): Promise<CustomisationOptionDetail | null> {
+  await requireUser();
+  const option = await db.query.customisationOptions.findFirst({
+    where: eq(customisationOptions.id, id),
+  });
+  if (!option) return null;
+  const [links, choices] = await Promise.all([
+    db
+      .select({ categoryId: customisationOptionCategories.categoryId })
+      .from(customisationOptionCategories)
+      .where(eq(customisationOptionCategories.optionId, id)),
+    db
+      .select({
+        id: customisationChoices.id,
+        name: customisationChoices.name,
+        active: customisationChoices.active,
+      })
+      .from(customisationChoices)
+      .where(eq(customisationChoices.optionId, id))
+      .orderBy(
+        asc(customisationChoices.sortOrder),
+        asc(customisationChoices.name),
+      ),
+  ]);
+  return {
+    id: option.id,
+    name: option.name,
+    active: option.active,
+    inputType: option.inputType,
+    maxLength: option.maxLength,
+    extraPrice: option.extraPrice,
+    extraCost: option.extraCost,
+    categoryIds: links.map((l) => l.categoryId),
+    choices: choices.map((c) => ({ ...c, detail: null })),
   };
 }

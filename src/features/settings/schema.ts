@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { listKind } from "@/db/schema";
+import type { customisationInput, listKind } from "@/db/schema";
+import { moneyField } from "@/lib/money";
 
 // Zod schemas for the Settings forms, shared by the client forms and the server actions.
 
@@ -88,3 +89,75 @@ export const setActiveSchema = z.object({ id, active: z.boolean() });
 export const moveSchema = z.object({ id, direction: z.enum(["up", "down"]) });
 
 export type MoveDirection = z.infer<typeof moveSchema>["direction"];
+
+// --- Customisation options (§2.3) ---------------------------------------------
+
+export const INPUT_TYPES = ["none", "text", "choice"] as const;
+export type InputType = (typeof INPUT_TYPES)[number];
+
+// Fails to compile if INPUT_TYPES and the customisation_input enum drift apart.
+const inputTypesMatch: Same<
+  InputType,
+  (typeof customisationInput.enumValues)[number]
+> = true;
+void inputTypesMatch;
+
+export const INPUT_TYPE_LABELS: Record<InputType, string> = {
+  none: "No input",
+  text: "Text",
+  choice: "Choice from a list",
+};
+
+const MAX_EXTRA_PAISE = 1_00_000_00; // ₹1,00,000: a typo guard, well inside int4
+
+const extraAmount = moneyField().pipe(
+  z.number().max(MAX_EXTRA_PAISE, "Keep it under ₹1,00,000"),
+);
+
+/**
+ * The option form's fields as typed (strings), output with paise and a numeric max length.
+ * `maxLength` is required for text input and dropped for the others, matching the
+ * customisation_options_max_length CHECK.
+ */
+const optionFields = z.object({
+  name: nameSchema,
+  inputType: z.enum(INPUT_TYPES),
+  maxLength: z.string().trim(),
+  extraPrice: extraAmount,
+  extraCost: extraAmount,
+  categoryIds: z.array(z.uuid()).max(100),
+});
+
+function withOptionRules<T extends z.ZodType<z.output<typeof optionFields>>>(
+  schema: T,
+) {
+  return schema
+    .superRefine((value, ctx) => {
+      if (value.inputType !== "text") return;
+      const n = Number(value.maxLength);
+      if (!/^\d+$/.test(value.maxLength) || n < 1 || n > 500) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["maxLength"],
+          message: "Enter a number from 1 to 500",
+        });
+      }
+    })
+    .transform((value) => ({
+      ...value,
+      maxLength: value.inputType === "text" ? Number(value.maxLength) : null,
+      categoryIds: [...new Set(value.categoryIds)],
+    }));
+}
+
+export const customisationOptionSchema = withOptionRules(optionFields);
+
+export const updateCustomisationOptionSchema = withOptionRules(
+  optionFields.extend({ id }),
+);
+
+export type CustomisationOptionInput = z.input<
+  typeof customisationOptionSchema
+>;
+
+export const addChoiceSchema = z.object({ optionId: id, name: nameSchema });

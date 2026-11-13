@@ -37,8 +37,9 @@ type Props = {
   plural?: string; // defaults to noun + "s"
   items: ManagedItem[];
   detailField?: DetailField;
-  onAdd: (values: ItemValues) => Promise<Result>;
-  onUpdate: (id: string, values: ItemValues) => Promise<Result>;
+  /** Inline add and edit; leave out when entries are edited on their own page. */
+  onAdd?: (values: ItemValues) => Promise<Result>;
+  onUpdate?: (id: string, values: ItemValues) => Promise<Result>;
   onMove: (id: string, direction: MoveDirection) => Promise<Result>;
   /** Lists whose entries are referenced elsewhere deactivate instead of deleting. */
   onSetActive?: (id: string, active: boolean) => Promise<Result>;
@@ -55,9 +56,7 @@ export function ManagedList(props: Props) {
   return (
     <div className="flex flex-col gap-6">
       {items.length === 0 ? (
-        <p className="text-muted-foreground">
-          No {plural} yet. Add the first below.
-        </p>
+        <p className="text-muted-foreground">No {plural} yet.</p>
       ) : (
         <ul className="divide-y rounded-lg border">
           {items.map((item, index) => (
@@ -71,14 +70,16 @@ export function ManagedList(props: Props) {
           ))}
         </ul>
       )}
-      <ItemForm
-        title={`Add a ${noun}`}
-        submitLabel="Add"
-        detailField={props.detailField}
-        initial={{ name: "", detail: "" }}
-        onSubmit={props.onAdd}
-        resetOnSuccess
-      />
+      {props.onAdd && (
+        <ItemForm
+          title={`Add a ${noun}`}
+          submitLabel="Add"
+          detailField={props.detailField}
+          initial={{ name: "", detail: "" }}
+          onSubmit={props.onAdd}
+          resetOnSuccess
+        />
+      )}
     </div>
   );
 }
@@ -106,7 +107,7 @@ function Row({
     });
   }
 
-  if (editing) {
+  if (editing && onUpdate) {
     return (
       <li className="p-3">
         <ItemForm
@@ -174,13 +175,15 @@ function Row({
         >
           <ArrowDown />
         </IconButton>
-        <IconButton
-          label={`Edit ${item.name}`}
-          disabled={pending}
-          onClick={() => setEditing(true)}
-        >
-          <Pencil />
-        </IconButton>
+        {onUpdate && (
+          <IconButton
+            label={`Edit ${item.name}`}
+            disabled={pending}
+            onClick={() => setEditing(true)}
+          >
+            <Pencil />
+          </IconButton>
+        )}
         {onSetActive && (
           <IconButton
             label={
@@ -259,6 +262,13 @@ function ItemForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  /** Updates a field and clears its error (the schema key may differ, e.g. a URL). */
+  function change(field: keyof ItemValues, errorKey: string, value: string) {
+    setValues((v) => ({ ...v, [field]: value }));
+    setFieldErrors(({ [errorKey]: _cleared, ...rest }) => rest);
+    setError(null);
+  }
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -294,7 +304,7 @@ function ItemForm({
         <Input
           id={`${id}-name`}
           value={values.name}
-          onChange={(e) => setValues({ ...values, name: e.target.value })}
+          onChange={(e) => change("name", "name", e.target.value)}
           placeholder="Name"
           autoComplete="off"
           className="h-11"
@@ -313,7 +323,7 @@ function ItemForm({
           <Input
             id={`${id}-detail`}
             value={values.detail}
-            onChange={(e) => setValues({ ...values, detail: e.target.value })}
+            onChange={(e) => change("detail", detailField.key, e.target.value)}
             placeholder={detailField.placeholder}
             inputMode="url"
             autoComplete="off"

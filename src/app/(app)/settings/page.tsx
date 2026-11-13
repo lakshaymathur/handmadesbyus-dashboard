@@ -14,6 +14,10 @@ const sections: { title: string; links: { href: string; label: string }[] }[] =
           href: "/settings/categories",
           label: "Categories and production stages",
         },
+        {
+          href: "/settings/customisations",
+          label: "Customisation options",
+        },
         ...(["types", "colours", "designs"] as const).map((slug) => ({
           href: `/settings/lists/${slug}`,
           label: LIST_PAGES[slug].title,
