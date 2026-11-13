@@ -11,7 +11,7 @@ import type { ManagedItem } from "../queries";
 import {
   addListItemSchema,
   moveSchema,
-  renameListItemSchema,
+  renameSchema,
   setActiveSchema,
   type ListKind,
 } from "../schema";
@@ -35,7 +35,7 @@ export function ListItemsEditor({
         validateThenRun(addListItemSchema, { kind, name }, addListItem)
       }
       onUpdate={(id, { name }) =>
-        validateThenRun(renameListItemSchema, { id, name }, renameListItem)
+        validateThenRun(renameSchema, { id, name }, renameListItem)
       }
       onSetActive={(id, active) =>
         validateThenRun(setActiveSchema, { id, active }, setListItemActive)

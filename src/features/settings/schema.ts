@@ -47,7 +47,17 @@ export const addListItemSchema = z.object({
   name: nameSchema,
 });
 
-export const renameListItemSchema = z.object({ id, name: nameSchema });
+/** Renames anything with a name: list entries, categories, stages. */
+export const renameSchema = z.object({ id, name: nameSchema });
+
+export const idSchema = z.object({ id });
+
+export const addCategorySchema = z.object({ name: nameSchema });
+
+export const addStageSchema = z.object({ categoryId: id, name: nameSchema });
+
+/** The stage every new category starts with. */
+export const FIRST_STAGE_NAME = "Not started";
 
 /**
  * A courier's tracking link with {awb} where the AWB number goes. Empty means none.

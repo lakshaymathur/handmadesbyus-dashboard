@@ -1,6 +1,16 @@
 "use client";
 
-import { ArrowDown, ArrowUp, Eye, EyeOff, Pencil, Plus } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
+import Link from "next/link";
 import { useId, useState, useTransition, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,25 +34,29 @@ type Result = ActionResult<unknown>;
 
 type Props = {
   noun: string; // "colour"
+  plural?: string; // defaults to noun + "s"
   items: ManagedItem[];
   detailField?: DetailField;
   onAdd: (values: ItemValues) => Promise<Result>;
   onUpdate: (id: string, values: ItemValues) => Promise<Result>;
-  onSetActive: (id: string, active: boolean) => Promise<Result>;
   onMove: (id: string, direction: MoveDirection) => Promise<Result>;
+  /** Lists whose entries are referenced elsewhere deactivate instead of deleting. */
+  onSetActive?: (id: string, active: boolean) => Promise<Result>;
+  /** Hard delete, after a confirmation. The server refuses entries still in use. */
+  onDelete?: (id: string) => Promise<Result>;
 };
 
 /**
- * An editable list: add, rename, reorder, deactivate. Entries are never deleted, because
- * products and orders refer to them; inactive ones stay listed so they can come back.
+ * An editable list: add, rename, reorder, and deactivate or delete. Inactive entries stay
+ * listed so they can come back. Entries with an `href` link to their own page.
  */
 export function ManagedList(props: Props) {
-  const { items, noun } = props;
+  const { items, noun, plural = `${noun}s` } = props;
   return (
     <div className="flex flex-col gap-6">
       {items.length === 0 ? (
         <p className="text-muted-foreground">
-          No {noun}s yet. Add the first below.
+          No {plural} yet. Add the first below.
         </p>
       ) : (
         <ul className="divide-y rounded-lg border">
@@ -77,6 +91,7 @@ function Row({
   detailField,
   onUpdate,
   onSetActive,
+  onDelete,
   onMove,
 }: Props & { item: ManagedItem; isFirst: boolean; isLast: boolean }) {
   const [editing, setEditing] = useState(false);
@@ -110,16 +125,32 @@ function Row({
     <li className={cn("flex flex-col gap-1 p-3", pending && "opacity-60")}>
       <div className="flex items-center gap-2">
         <div className="flex min-w-0 flex-1 flex-col">
-          <span
-            className={cn(
-              "truncate font-medium",
-              !item.active && "text-muted-foreground line-through",
-            )}
-          >
-            {item.name}
-          </span>
+          {item.href ? (
+            <Link
+              href={item.href}
+              className={cn(
+                "flex min-h-10 items-center gap-1 font-medium underline-offset-4 hover:underline",
+                !item.active && "text-muted-foreground line-through",
+              )}
+            >
+              <span className="break-words">{item.name}</span>
+              <ChevronRight
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+            </Link>
+          ) : (
+            <span
+              className={cn(
+                "font-medium break-words",
+                !item.active && "text-muted-foreground line-through",
+              )}
+            >
+              {item.name}
+            </span>
+          )}
           {item.detail && (
-            <span className="truncate text-xs text-muted-foreground">
+            <span className="text-xs wrap-anywhere text-muted-foreground">
               {item.detail}
             </span>
           )}
@@ -150,15 +181,34 @@ function Row({
         >
           <Pencil />
         </IconButton>
-        <IconButton
-          label={
-            item.active ? `Deactivate ${item.name}` : `Reactivate ${item.name}`
-          }
-          disabled={pending}
-          onClick={() => run(() => onSetActive(item.id, !item.active))}
-        >
-          {item.active ? <EyeOff /> : <Eye />}
-        </IconButton>
+        {onSetActive && (
+          <IconButton
+            label={
+              item.active
+                ? `Deactivate ${item.name}`
+                : `Reactivate ${item.name}`
+            }
+            disabled={pending}
+            onClick={() => run(() => onSetActive(item.id, !item.active))}
+          >
+            {item.active ? <EyeOff /> : <Eye />}
+          </IconButton>
+        )}
+        {onDelete && (
+          <IconButton
+            label={`Delete ${item.name}`}
+            disabled={pending}
+            onClick={() => {
+              if (
+                window.confirm(`Delete "${item.name}"? This can't be undone.`)
+              ) {
+                run(() => onDelete(item.id));
+              }
+            }}
+          >
+            <Trash2 />
+          </IconButton>
+        )}
       </div>
       {error && (
         <p role="alert" className="text-sm text-destructive">

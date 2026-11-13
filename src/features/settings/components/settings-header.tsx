@@ -1,22 +1,24 @@
 import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 
-/** Page title with a link back to the Settings index. */
+/** Page title with a link back (to the Settings index unless `back` says otherwise). */
 export function SettingsHeader({
   title,
   description,
+  back = { href: "/settings", label: "Settings" },
 }: {
   title: string;
   description?: string;
+  back?: { href: string; label: string };
 }) {
   return (
     <div className="flex flex-col gap-1">
       <Link
-        href="/settings"
+        href={back.href}
         className="-ml-1 flex h-10 w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="size-4" aria-hidden />
-        Settings
+        {back.label}
       </Link>
       <h1 className="font-heading text-xl font-semibold">{title}</h1>
       {description && <p className="text-muted-foreground">{description}</p>}

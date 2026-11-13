@@ -9,10 +9,16 @@ const sections: { title: string; links: { href: string; label: string }[] }[] =
   [
     {
       title: "Products",
-      links: (["types", "colours", "designs"] as const).map((slug) => ({
-        href: `/settings/lists/${slug}`,
-        label: LIST_PAGES[slug].title,
-      })),
+      links: [
+        {
+          href: "/settings/categories",
+          label: "Categories and production stages",
+        },
+        ...(["types", "colours", "designs"] as const).map((slug) => ({
+          href: `/settings/lists/${slug}`,
+          label: LIST_PAGES[slug].title,
+        })),
+      ],
     },
     {
       title: "Shipping",
