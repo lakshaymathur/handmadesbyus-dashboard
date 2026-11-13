@@ -13,7 +13,7 @@ Internal web app for a small handmade-products business (Instagram-first, India)
 Next.js 16 (App Router; APIs differ from older versions, so check `node_modules/next/dist/docs/` per `AGENTS.md`) + TypeScript · Tailwind + shadcn/ui · PostgreSQL + Drizzle ORM · Better Auth (username + password) · S3 API for files via `aws4fetch` (SeaweedFS locally) · Zod · dnd-kit (Kanban) · Recharts · SheetJS (import). Package manager: npm.
 
 ## Commands
-> Commands marked *(planned)* don't exist until milestone M0 is done. Update this list when they change.
+> Update this list when commands change.
 - `cp .env.example .env` once, then `docker compose up -d --wait`: start Postgres 17 (dev + test DBs) and SeaweedFS S3 on localhost. Data in `.docker-data/` (delete it to start fresh)
 - `npm run dev`: app at http://localhost:3000 · `npm run build`: standalone build in `.next/standalone`
 - `npm run db:generate`: write a migration from `src/db/schema.ts` · `npm run db:migrate`: apply migrations · `npm run db:studio`: browse data

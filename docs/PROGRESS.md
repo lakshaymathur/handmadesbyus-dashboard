@@ -3,17 +3,17 @@
 _Last updated: 2026-11-13 · Keep this file under ~80 lines. Finished detail lives in git history._
 
 ## Current focus
-**M0: Project setup**, steps 1–3 done (scaffold, quality tooling, Docker). Next: Drizzle.
+**M1: Data model + Settings** (§2, §3.7). M0 is done: scaffold, Docker, Drizzle, test harness, auth, layout, lib helpers, `/code-review` and `/security-review` fixed.
 
 ## Next steps
-1. **Drizzle setup**: `src/db/client.ts` (reads `DATABASE_URL`), `drizzle.config.ts`, an empty `src/db/schema.ts`, migrate script, and the `db:generate` / `db:migrate` / `db:seed` / `db:reset` scripts from CLAUDE.md. Validate env vars with Zod at startup.
-2. **Integration test wiring**: Vitest setup that migrates and truncates `TEST_DATABASE_URL`, one smoke `*.int.test.ts`, then drop `--passWithNoTests` from `test:integration` in `package.json`.
-3. **Auth**: Better Auth with the username plugin, the `authedAction()` wrapper plus its lint rule (add a case to `eslint.config.test.ts`), a login page, a protected app layout with mobile nav, and a first-user seed. Add the auth env vars to `.env.example`.
-4. **Lib helpers** with unit tests: `lib/money` (paise, ₹1,23,456), `lib/dates` (DD/MM/YYYY, IST), `lib/ids` (`C-0001`, `HMU-YYMM-####`), and `lib/storage` (S3 helper; AWS SDKs are lint-banned, so use a generic S3 client such as `minio`).
-5. Close M0: try it at 375px, then run `/code-review` and `/security-review`, and fix the findings.
+1. **Full schema** in `src/db/schema.ts` from §2.1–2.9: customers, addresses, products, categories, production stages (per category), customisation options, orders, order items (price/cost/customisation snapshots), status_history, shipments, payments, expenses, managed lists. Audit columns on every table and the DB constraints from CLAUDE.md "Quality controls". Then `npm run db:generate`.
+2. **Atomic ID counters** for `C-0001` and `HMU-YYMM-####` (a counters table with `UPDATE … RETURNING`), wired to `lib/ids`, with an integration test for concurrent allocation.
+3. **Settings screens** (§3.7): managed lists, categories + their production stages, customisation options. Add a `features/settings/` folder with `queries.ts` (calls `requireUser()`), `actions.ts` (`authedAction()`), and Zod schemas.
+4. **Seed sample data** in `src/db/seed.ts` (categories, stages, a few products/customers), only on databases marked `disposable-local`.
+5. Consider a lint rule that every exported function in `features/*/queries.ts` calls `requireUser()`.
 
 ## Milestones (MVP)
-- [ ] **M0** Project setup: scaffold, Docker, DB, auth, layout, lib helpers
+- [x] **M0** Project setup: scaffold, Docker, DB, auth, layout, lib helpers
 - [ ] **M1** Data model + Settings: full schema, managed lists, categories + production stages, customisation options, seed data (§2, §3.7)
 - [ ] **M2** Customers: list, search, detail, addresses, duplicate warnings (§2.1, §3.3)
 - [ ] **M3** Products: grid, CRUD, photos, archive, duplicate (§2.2, §3.4)
@@ -27,10 +27,17 @@ _Last updated: 2026-11-13 · Keep this file under ~80 lines. Finished detail liv
 ## Decisions not in the spec
 - Production hosting is deliberately **undecided**. Keep everything portable (see CLAUDE.md hard rules).
 - During development, real business data stays in the spreadsheet. The local DB is disposable.
-- Local S3 is **SeaweedFS** (`weed mini`), not MinIO: MinIO stopped publishing Docker images (chosen 2026-11-13).
-- Integration tests (`*.int.test.ts`) may import the DB directly to seed and assert; the DB-import lint rule exempts them (kept 2026-11-13).
+- Local S3 is **SeaweedFS** (`weed mini`), not MinIO: MinIO stopped publishing Docker images. The S3 client is `aws4fetch` (AWS SDKs are lint-banned).
+- Integration tests (`*.int.test.ts`) may import the DB directly to seed and assert; the DB-import lint rule exempts them.
 - Next 16 template defaults `cacheComponents` and `partialPrefetching` are left on: DB reads in pages will need `<Suspense>`.
 - Quality controls approved 2026-11-13 (see CLAUDE.md). **Declined**: Playwright E2E tests, lint-on-edit hook, git pre-commit hook, GitHub Actions CI. Don't add these unless the user asks.
+- **Sign-in brute force**: per-IP limit (Better Auth, 3/10s) plus a per-username cap (10 per 15 min, `src/db/sign-in-attempts.ts`). Accepted trade-off: a known username can be locked out for up to 15 min.
+- **Production must sit behind a reverse proxy**. `next start` refuses `x-forwarded-for` with empty `TRUSTED_PROXIES`, and refuses the example `BETTER_AUTH_SECRET`. To run `next start` locally, set `TRUSTED_PROXIES=::1`.
+- Public sign-up is off. Users are created by the seed now, and from Settings later.
+- GitHub: private repo `lakshaymathur/handmadesbyus-dashboard`. A repo-local git credential helper pushes as `lakshaymathur` whichever `gh` account is active.
 
 ## Known issues / TODO
 - `npm audit`: 7 moderate issues in `@typescript-eslint` (used only for linting, not shipped in the app). Recheck after dependency updates.
+- When the startup env check fails, Next.js keeps running and returns 500s instead of exiting. Make it exit in the M9 Dockerfile (wrap `server.js`).
+- Production migration strategy (when and how `db:migrate` runs on deploy) is undecided (M9).
+- No security headers yet (CSP, `frame-ancestors`). Low risk because cookies are `SameSite=Lax`; add them in M9.
