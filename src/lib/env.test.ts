@@ -9,6 +9,8 @@ const valid = {
   S3_ACCESS_KEY_ID: "key",
   S3_SECRET_ACCESS_KEY: "super-secret-value",
   S3_FORCE_PATH_STYLE: "true",
+  BETTER_AUTH_SECRET: "x".repeat(32),
+  BETTER_AUTH_URL: "http://localhost:3000",
 };
 
 describe("parseServerEnv", () => {
@@ -47,6 +49,12 @@ describe("parseServerEnv", () => {
     expect(() =>
       parseServerEnv({ ...valid, DATABASE_URL: "mysql://localhost/app" }),
     ).toThrowError(/DATABASE_URL:/);
+  });
+
+  it("rejects a short BETTER_AUTH_SECRET", () => {
+    expect(() =>
+      parseServerEnv({ ...valid, BETTER_AUTH_SECRET: "too-short" }),
+    ).toThrowError(/BETTER_AUTH_SECRET: must be at least 32 characters/);
   });
 
   it("rejects a non-boolean S3_FORCE_PATH_STYLE", () => {

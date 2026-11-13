@@ -10,6 +10,11 @@ const serverEnvSchema = z.object({
   S3_ACCESS_KEY_ID: z.string().min(1),
   S3_SECRET_ACCESS_KEY: z.string().min(1),
   S3_FORCE_PATH_STYLE: z.stringbool().default(false),
+
+  // Signs session cookies. Generate with `openssl rand -base64 32`.
+  BETTER_AUTH_SECRET: z.string().min(32, "must be at least 32 characters"),
+  // Public URL of the app, e.g. https://dashboard.example.com
+  BETTER_AUTH_URL: z.url({ protocol: /^https?$/ }),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;

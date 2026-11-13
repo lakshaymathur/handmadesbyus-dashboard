@@ -17,7 +17,7 @@ Next.js 16 (App Router; APIs differ from older versions, so check `node_modules/
 - `cp .env.example .env` once, then `docker compose up -d --wait`: start Postgres 17 (dev + test DBs) and SeaweedFS S3 on localhost. Data in `.docker-data/` (delete it to start fresh)
 - `npm run dev`: app at http://localhost:3000 · `npm run build`: standalone build in `.next/standalone`
 - `npm run db:generate`: write a migration from `src/db/schema.ts` · `npm run db:migrate`: apply migrations · `npm run db:studio`: browse data
-- `npm run db:seed`: load sample data · `npm run db:reset`: wipe + migrate + seed (refuses non-local hosts)
+- `npm run db:seed`: create the first login user from `SEED_USER_*` (sample data from M1) · `npm run db:reset`: wipe + migrate + seed (refuses non-local hosts)
 - `npm run lint` · `npm run typecheck` (`next typegen` + `tsc`) · `npm run format` / `format:check` (Markdown is excluded)
 - `npm test`: unit tests · `npm run test:integration`: against the test Postgres (needs Docker up). Each run wipes and re-migrates `TEST_DATABASE_URL`; every test starts with empty tables; the app's `db` points at the test DB
 
@@ -30,7 +30,10 @@ src/
                        → actions.ts (server actions) · queries.ts · schema.ts (Zod) · components/
   components/ui/       shadcn/ui components
   db/                  schema.ts, migrations/, seed.ts, client.ts
-  lib/                 shared helpers (money, dates, ids, storage, auth)
+  lib/                 shared helpers (money, dates, ids, storage, env)
+  lib/auth/            server.ts (Better Auth) · session.ts (requireUser) · action.ts (authedAction) · client.ts
+  proxy.ts             redirects visitors without a session cookie to /login (optimistic only)
+eslint-rules/          custom lint rules (authed-action)
 ```
 
 ## Hard rules
@@ -38,7 +41,7 @@ src/
 - **Money**: store as integer **paise**. Format with `lib/money` (₹1,23,456). Dates are shown as DD/MM/YYYY in IST.
 - **Snapshots**: order items copy unit price, unit cost and customisation prices at order time. Orders copy the delivery address. Never recompute history from the current catalogue.
 - **Status changes** (order status and item production stage) always go through one function that also writes a `status_history` row.
-- **No hard deletes** of used products/orders: archive or cancel instead. Every table has `created_at/by` and `updated_at/by`.
+- **No hard deletes** of used products/orders: archive or cancel instead. Every table has `created_at/by` and `updated_at/by` (except Better Auth's tables: users, sessions, accounts, verifications, rate_limits).
 - **Validation**: one Zod schema per form, used by both the client and the server action.
 - **Readable IDs**: customers `C-0001`, orders `HMU-YYMM-####`.
 - Production stages are configurable per product category. Fulfilment stages are fixed (see §2.6).
@@ -47,8 +50,9 @@ src/
 ## Quality controls (approved 2026-11-13)
 - **Database constraints** for every table: NOT NULL, foreign keys, UNIQUE (mobile, Instagram handle, product ID, AWB per partner), CHECK (qty ≥ 1, money ≥ 0, discount % 0–100, mobile 10 digits, PIN 6 digits).
 - **TypeScript strict** + `noUncheckedIndexedAccess`. Don't use `any` or `@ts-ignore` without a comment explaining why.
-- **ESLint + Prettier**, plus custom rules: no AWS/Supabase/Vercel SDK imports, and no `db`/`drizzle-orm` imports outside `src/db`, `features/*/queries.ts`, `features/*/actions.ts` and `*.int.test.ts` (type-only imports are fine). `eslint.config.test.ts` checks these rules fire. `eslint-disable` and `@ts-ignore` need a `-- reason`.
-- **Every server action uses `authedAction()`** (`lib/auth`): it requires login, validates input with Zod, and sets audit fields. A lint rule enforces this.
+- **ESLint + Prettier**, plus custom rules: no AWS/Supabase/Vercel SDK imports, and no `db`/`drizzle-orm` imports outside `src/db`, `features/*/queries.ts`, `features/*/actions.ts`, `*.int.test.ts` and `src/lib/auth/server.ts` (type-only imports are fine). `eslint.config.test.ts` checks these rules fire. `eslint-disable` and `@ts-ignore` need a `-- reason`.
+- **Every server action uses `authedAction()`** (`@/lib/auth/action`): it requires login, validates input with Zod, and passes audit fields. The `local/authed-action` lint rule enforces this.
+- **Every query that returns data calls `requireUser()`** (`@/lib/auth/session`). Layouts and `proxy.ts` don't protect data: Next.js renders pages independently of their layout.
 - **Tests**: Vitest unit tests for all money, pricing, status-transition, revenue and import logic (`*.test.ts` next to the code). Integration tests for server actions against the real test Postgres (`*.int.test.ts`). No E2E tests.
 - **Stop hook** (`.claude/hooks/typecheck-on-stop.sh`): Claude can't end a turn while `npm run typecheck` fails.
 - **Definition of done for a milestone**: tests written and passing, typecheck and lint clean, the feature tried in the built-in browser at phone width (375px), and `/code-review` run on the milestone's changes with findings fixed.

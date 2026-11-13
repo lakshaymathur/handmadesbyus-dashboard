@@ -3,6 +3,7 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 import prettier from "eslint-config-prettier/flat";
 import eslintComments from "@eslint-community/eslint-plugin-eslint-comments/configs";
+import authedAction from "./eslint-rules/authed-action.mjs";
 
 // Hard rule (CLAUDE.md): plain Postgres + S3 API only, no vendor-specific SDKs.
 const vendorSdkPatterns = [
@@ -50,7 +51,10 @@ const eslintConfig = defineConfig([
   ...nextTs,
   eslintComments.recommended,
   {
+    plugins: { local: { rules: { "authed-action": authedAction } } },
     rules: {
+      // Every server action goes through authedAction() (eslint-rules/authed-action.mjs).
+      "local/authed-action": "error",
       // Unused code is an error; `_name` and `{ dropped, ...rest }` mark deliberate ones.
       "@typescript-eslint/no-unused-vars": [
         "error",
@@ -95,6 +99,8 @@ const eslintConfig = defineConfig([
       "src/features/*/queries.ts",
       "src/features/*/actions.ts",
       "**/*.int.test.ts",
+      // Better Auth's Drizzle adapter needs the db; nothing else in lib/ does.
+      "src/lib/auth/server.ts",
       "drizzle.config.ts",
       "scripts/**",
     ],
