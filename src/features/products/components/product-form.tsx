@@ -89,11 +89,21 @@ export function ProductForm({ productId, initial, choices }: Props) {
     { value: "", label: "None" },
     ...list,
   ];
-  const options = choices.options.filter(
-    (o) =>
-      o.categoryIds.includes(values.categoryId) &&
-      (o.active || initial.optionIds.includes(o.id)),
-  );
+  // The chosen category's options (inactive ones only if already offered), plus any the
+  // product offers that Settings has since taken off this category: shown so they can be
+  // unticked, and allowed to stay (the server keeps them while the category is unchanged).
+  const sameCategory = values.categoryId === initial.categoryId;
+  const options = choices.options
+    .filter(
+      (o) =>
+        (o.categoryIds.includes(values.categoryId) &&
+          (o.active || initial.optionIds.includes(o.id))) ||
+        (sameCategory && initial.optionIds.includes(o.id)),
+    )
+    .map((o) => ({
+      ...o,
+      notForCategory: !o.categoryIds.includes(values.categoryId),
+    }));
 
   const price = parseMoney(values.price);
   const cost = parseMoney(values.cost);
@@ -246,10 +256,16 @@ export function ProductForm({ productId, initial, choices }: Props) {
                 className="size-5 accent-foreground"
               />
               {option.name}
-              {!option.active && (
+              {option.notForCategory ? (
                 <span className="text-sm text-muted-foreground">
-                  (inactive)
+                  (no longer offered for this category)
                 </span>
+              ) : (
+                !option.active && (
+                  <span className="text-sm text-muted-foreground">
+                    (inactive)
+                  </span>
+                )
               )}
             </label>
           ))

@@ -49,7 +49,8 @@ export type ProductSummary = {
 
 /** Products matching `filters`, with their main photo: active first, then by name. */
 export async function getProducts(
-  filters: ProductFilters = { status: "all" },
+  // Active only unless asked: archived products are hidden from new orders.
+  filters: ProductFilters = { status: "active" },
 ): Promise<ProductSummary[]> {
   await requireUser();
   const rows = await db
@@ -203,9 +204,41 @@ export type ProductFormChoices = {
 export async function getProductFormChoices(): Promise<ProductFormChoices> {
   await requireUser();
   const choice = { id: true, name: true, active: true } as const;
-  const [categoryRows, itemRows, optionRows, links] = await Promise.all([
-    db.query.categories.findMany({
+  const [lists, optionRows, links] = await Promise.all([
+    listChoices(),
+    db.query.customisationOptions.findMany({
       columns: choice,
+      orderBy: [
+        asc(customisationOptions.sortOrder),
+        byName(customisationOptions.name),
+      ],
+    }),
+    db.select().from(customisationOptionCategories),
+  ]);
+  return {
+    ...lists,
+    options: optionRows.map((o) => ({
+      ...o,
+      categoryIds: links
+        .filter((l) => l.optionId === o.id)
+        .map((l) => l.categoryId),
+    })),
+  };
+}
+
+export type ProductFilterChoices = Omit<ProductFormChoices, "options">;
+
+/** The products page's filter dropdowns: categories, types, colours (and designs). */
+export async function getProductFilterChoices(): Promise<ProductFilterChoices> {
+  await requireUser();
+  return listChoices();
+}
+
+/** Categories and the product lists, inactive entries included, in display order. */
+async function listChoices(): Promise<ProductFilterChoices> {
+  const [categoryRows, itemRows] = await Promise.all([
+    db.query.categories.findMany({
+      columns: { id: true, name: true, active: true },
       orderBy: [asc(categories.sortOrder), byName(categories.name)],
     }),
     db
@@ -218,14 +251,6 @@ export async function getProductFormChoices(): Promise<ProductFormChoices> {
       .from(listItems)
       .where(inArray(listItems.kind, ["product_type", "colour", "design"]))
       .orderBy(asc(listItems.sortOrder), byName(listItems.name)),
-    db.query.customisationOptions.findMany({
-      columns: choice,
-      orderBy: [
-        asc(customisationOptions.sortOrder),
-        byName(customisationOptions.name),
-      ],
-    }),
-    db.select().from(customisationOptionCategories),
   ]);
   const of = (kind: string) =>
     itemRows
@@ -236,12 +261,6 @@ export async function getProductFormChoices(): Promise<ProductFormChoices> {
     types: of("product_type"),
     colours: of("colour"),
     designs: of("design"),
-    options: optionRows.map((o) => ({
-      ...o,
-      categoryIds: links
-        .filter((l) => l.optionId === o.id)
-        .map((l) => l.categoryId),
-    })),
   };
 }
 

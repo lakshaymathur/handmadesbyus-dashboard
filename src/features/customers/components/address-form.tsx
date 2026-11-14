@@ -1,9 +1,10 @@
 "use client";
 
-import { useId, useState, useTransition } from "react";
+import { useId, useState } from "react";
 import { FormMessage } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { validateThenRun } from "@/lib/client-action";
+import { useActionButton } from "@/lib/use-action-button";
 import { useActionForm } from "@/lib/use-action-form";
 import {
   addAddress,
@@ -91,22 +92,7 @@ export function AddressButtons({
   isDefault: boolean;
   isOnly: boolean;
 }) {
-  const [pending, startTransition] = useTransition();
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
-    null,
-  );
-
-  function run(action: typeof setDefaultAddress) {
-    setMessage(null);
-    startTransition(async () => {
-      const result = await validateThenRun(
-        addressIdSchema,
-        { id: addressId },
-        action,
-      );
-      if (result && !result.ok) setMessage({ ok: false, text: result.error });
-    });
-  }
+  const { run, pending, message } = useActionButton(addressIdSchema);
 
   return (
     <>
@@ -116,7 +102,7 @@ export function AddressButtons({
           variant="outline"
           className="h-10"
           disabled={pending}
-          onClick={() => run(setDefaultAddress)}
+          onClick={() => run(setDefaultAddress, { id: addressId })}
         >
           Make default
         </Button>
@@ -133,7 +119,7 @@ export function AddressButtons({
                 "Delete this address? Past orders keep their copy.",
               )
             ) {
-              run(deleteAddress);
+              run(deleteAddress, { id: addressId });
             }
           }}
         >

@@ -12,6 +12,11 @@ import {
   type ProductStatus,
 } from "../schema";
 
+/** A left click without modifiers (others open new tabs/windows: leave those alone). */
+function isPlainClick(e: React.MouseEvent): boolean {
+  return e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+}
+
 const STATUS_LABELS: Record<ProductStatus, string> = {
   active: "Active",
   archived: "Archived",
@@ -95,6 +100,7 @@ export function ProductFilterBar({
               scroll={false}
               aria-current={shown.status === status ? "true" : undefined}
               onClick={(e) => {
+                if (!isPlainClick(e)) return; // new tab/window: let the link work
                 e.preventDefault();
                 apply({ ...shown, status });
               }}
@@ -115,6 +121,7 @@ export function ProductFilterBar({
             replace
             scroll={false}
             onClick={(e) => {
+              if (!isPlainClick(e)) return;
               e.preventDefault();
               apply({ status: "active" });
             }}

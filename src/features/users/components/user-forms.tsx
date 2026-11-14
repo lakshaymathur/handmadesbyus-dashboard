@@ -1,10 +1,11 @@
 "use client";
 
-import { useId, useState, useTransition } from "react";
+import { useId, useState } from "react";
 import { FormField, FormMessage } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { validateThenRun } from "@/lib/client-action";
+import { useActionButton } from "@/lib/use-action-button";
 import { useActionForm } from "@/lib/use-action-form";
 import {
   changeOwnPassword,
@@ -274,8 +275,7 @@ export function UserStatusButton({
   name: string;
   active: boolean;
 }) {
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const { run, pending, message } = useActionButton(setUserActiveSchema);
 
   function toggle() {
     if (
@@ -286,15 +286,7 @@ export function UserStatusButton({
     ) {
       return;
     }
-    setError(null);
-    startTransition(async () => {
-      const result = await validateThenRun(
-        setUserActiveSchema,
-        { id: userId, active: !active },
-        setUserActive,
-      );
-      if (result && !result.ok) setError(result.error);
-    });
+    run(setUserActive, { id: userId, active: !active });
   }
 
   return (
@@ -308,11 +300,7 @@ export function UserStatusButton({
       >
         {pending ? "Saving…" : active ? "Deactivate user" : "Reactivate user"}
       </Button>
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
+      <FormMessage message={message} />
     </div>
   );
 }

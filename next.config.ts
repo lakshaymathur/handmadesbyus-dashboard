@@ -20,9 +20,9 @@ const nextConfig: NextConfig = {
   output: "standalone",
   cacheComponents: true,
   experimental: {
-    // Product photos are shrunk in the browser, then uploaded through a server action;
-    // the action itself caps a photo at 4 MB (features/products/schema.ts).
-    serverActions: { bodySizeLimit: "5mb" },
+    // Applies to every server action (parsed before the session is checked), so keep it
+    // small: just above the 1.5 MB photo cap (MAX_PHOTO_BYTES, features/products/schema.ts).
+    serverActions: { bodySizeLimit: "2mb" },
   },
   partialPrefetching: true,
   turbopack: {

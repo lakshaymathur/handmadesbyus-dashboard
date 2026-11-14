@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
 import { FormMessage } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
-import { validateThenRun } from "@/lib/client-action";
-import type { FormMessageState } from "@/lib/use-action-form";
+import { useActionButton } from "@/lib/use-action-button";
 import { deleteProduct } from "../actions";
 import { productIdSchema } from "../schema";
 
@@ -16,9 +14,7 @@ export function DeleteProductButton({
   productId: string;
   productName: string;
 }) {
-  const [pending, startTransition] = useTransition();
-  const [message, setMessage] = useState<FormMessageState>(null);
-
+  const { run, pending, message } = useActionButton(productIdSchema);
   return (
     <div className="flex flex-col gap-2">
       <Button
@@ -28,23 +24,12 @@ export function DeleteProductButton({
         disabled={pending}
         onClick={() => {
           if (
-            !window.confirm(
+            window.confirm(
               `Delete “${productName}” and its photos? This can't be undone.`,
             )
           ) {
-            return;
+            run(deleteProduct, { id: productId });
           }
-          setMessage(null);
-          startTransition(async () => {
-            const result = await validateThenRun(
-              productIdSchema,
-              { id: productId },
-              deleteProduct,
-            );
-            if (result && !result.ok) {
-              setMessage({ ok: false, text: result.error });
-            }
-          });
         }}
       >
         {pending ? "Deleting…" : "Delete product"}

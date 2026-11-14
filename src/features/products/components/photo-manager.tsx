@@ -6,6 +6,7 @@ import { FormMessage } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
 import { validateThenRun } from "@/lib/client-action";
 import { shrinkPhoto } from "@/lib/shrink-photo";
+import { useActionButton } from "@/lib/use-action-button";
 import type { FormMessageState } from "@/lib/use-action-form";
 import {
   deleteProductPhoto,
@@ -13,7 +14,12 @@ import {
   uploadProductPhoto,
 } from "../actions";
 import type { ProductPhoto } from "../queries";
-import { MAX_PHOTOS, photoIdSchema, uploadPhotoSchema } from "../schema";
+import {
+  MAX_PHOTO_BYTES,
+  MAX_PHOTOS,
+  photoIdSchema,
+  uploadPhotoSchema,
+} from "../schema";
 
 /** A product's photos (§2.2): add up to 5, choose the main one, delete. */
 export function PhotoManager({
@@ -29,6 +35,8 @@ export function PhotoManager({
   const [pending, startTransition] = useTransition();
   const [status, setStatus] = useState<string | null>(null);
   const [message, setMessage] = useState<FormMessageState>(null);
+  const buttons = useActionButton(photoIdSchema);
+  const busy = pending || buttons.pending;
   const room = MAX_PHOTOS - photos.length;
 
   function upload(files: File[]) {
@@ -45,9 +53,11 @@ export function PhotoManager({
         setStatus(`Uploading ${index + 1} of ${chosen.length}…`);
         let photo: File;
         try {
-          photo = await shrinkPhoto(file);
+          photo = await shrinkPhoto(file, MAX_PHOTO_BYTES);
         } catch {
-          problems.push(`Couldn't read “${file.name}” as a photo.`);
+          problems.push(
+            `Couldn't read “${file.name}” as a photo. Use JPEG, PNG or WebP.`,
+          );
           continue;
         }
         const result = await validateThenRun(
@@ -62,14 +72,6 @@ export function PhotoManager({
         setMessage({ ok: false, text: problems.join(" ") });
       }
       if (input.current) input.current.value = "";
-    });
-  }
-
-  function run(action: typeof makeMainPhoto, id: string) {
-    setMessage(null);
-    startTransition(async () => {
-      const result = await validateThenRun(photoIdSchema, { id }, action);
-      if (result && !result.ok) setMessage({ ok: false, text: result.error });
     });
   }
 
@@ -102,8 +104,8 @@ export function PhotoManager({
                     type="button"
                     variant="outline"
                     className="h-10 flex-1"
-                    disabled={pending}
-                    onClick={() => run(makeMainPhoto, photo.id)}
+                    disabled={busy}
+                    onClick={() => buttons.run(makeMainPhoto, { id: photo.id })}
                   >
                     Make main
                   </Button>
@@ -112,10 +114,10 @@ export function PhotoManager({
                   type="button"
                   variant="outline"
                   className="h-10 flex-1 text-destructive"
-                  disabled={pending}
+                  disabled={busy}
                   onClick={() => {
                     if (window.confirm("Delete this photo?")) {
-                      run(deleteProductPhoto, photo.id);
+                      buttons.run(deleteProductPhoto, { id: photo.id });
                     }
                   }}
                 >
@@ -132,18 +134,20 @@ export function PhotoManager({
           <input
             ref={input}
             type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+            // No HEIC: iPhones convert to JPEG for this list, and Chrome can't read HEIC.
+            accept="image/jpeg,image/png,image/webp"
+            aria-label="Add photos"
             multiple
             className="sr-only"
             id={`${productId}-photos`}
             onChange={(e) => upload([...(e.target.files ?? [])])}
-            disabled={pending}
+            disabled={busy}
           />
           <Button
             type="button"
             variant="outline"
             className="h-11 sm:w-fit"
-            disabled={pending}
+            disabled={busy}
             onClick={() => input.current?.click()}
           >
             <ImagePlus aria-hidden />
@@ -159,7 +163,7 @@ export function PhotoManager({
           another.
         </p>
       )}
-      <FormMessage message={message} />
+      <FormMessage message={message ?? buttons.message} />
     </div>
   );
 }

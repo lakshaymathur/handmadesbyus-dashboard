@@ -86,15 +86,19 @@ export function margin(
 /** §2.2: up to 5 photos; the first is the thumbnail. */
 export const MAX_PHOTOS = 5;
 
-/** Photos are shrunk in the browser first (~0.3–1 MB); this is the server's hard cap. */
-export const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
+/**
+ * Photos are shrunk in the browser first (usually 0.2–0.6 MB, re-encoded smaller if
+ * needed to fit); this is the server's hard cap. Keep next.config's bodySizeLimit just
+ * above it: that limit applies to every server action, before anyone is signed in.
+ */
+export const MAX_PHOTO_BYTES = 1.5 * 1024 * 1024;
 
 export const uploadPhotoSchema = z.object({
   productId: z.uuid(),
   photo: z
     .file("Choose a photo")
     .min(1, "That photo is empty")
-    .max(MAX_PHOTO_BYTES, "That photo is too large (4 MB at most)"),
+    .max(MAX_PHOTO_BYTES, "That photo is too large (1.5 MB at most)"),
 });
 
 export const photoIdSchema = z.object({ id: z.uuid() });

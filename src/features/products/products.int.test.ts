@@ -270,6 +270,62 @@ describe("editing a product", () => {
   });
 });
 
+describe("options Settings no longer offers for the category", () => {
+  async function unlinkLatkanFromBox() {
+    await db
+      .delete(customisationOptionCategories)
+      .where(eq(customisationOptionCategories.optionId, ids.latkan));
+  }
+
+  it("can stay on a product, or be removed, but not newly added", async () => {
+    const id = await add(); // offers Latkan and Sticker
+    await unlinkLatkanFromBox();
+    // Saving unchanged still works: Latkan stays.
+    await redirectTarget(updateProduct({ ...input({ price: "1,300" }), id }));
+    expect((await getProduct(id))?.options.map((o) => o.name)).toEqual([
+      "Latkan",
+      "Sticker",
+    ]);
+    // Unticking it works too.
+    await redirectTarget(
+      updateProduct({ ...input({ optionIds: [ids.sticker] }), id }),
+    );
+    expect((await getProduct(id))?.options.map((o) => o.name)).toEqual([
+      "Sticker",
+    ]);
+    // But it can't be added back, or onto another product.
+    expect(
+      await updateProduct({
+        ...input({ optionIds: [ids.latkan, ids.sticker] }),
+        id,
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { optionIds: expect.any(Array) },
+    });
+    expect(
+      await createProduct(input({ sku: "NEW-1", optionIds: [ids.latkan] })),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { optionIds: expect.any(Array) },
+    });
+  });
+
+  it("aren't kept when the product moves to another category", async () => {
+    const id = await add();
+    await unlinkLatkanFromBox();
+    expect(
+      await updateProduct({
+        ...input({ categoryId: ids.pouch, optionIds: [ids.latkan] }),
+        id,
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { optionIds: expect.any(Array) },
+    });
+  });
+});
+
 describe("archiving", () => {
   it("hides it at the end of the list and can bring it back", async () => {
     const box = await add();
@@ -283,7 +339,9 @@ describe("archiving", () => {
       ok: true,
       data: undefined,
     });
-    expect((await getProducts()).map((p) => [p.name, p.archived])).toEqual([
+    expect(
+      (await getProducts({ status: "all" })).map((p) => [p.name, p.archived]),
+    ).toEqual([
       ["Zari Pouch", false],
       ["Square Box – Red Floral", true],
     ]);
@@ -495,6 +553,10 @@ describe("filtering", () => {
 
     const names = async (filters: Parameters<typeof getProducts>[0]) =>
       (await getProducts(filters)).map((p) => p.name);
+    expect((await getProducts()).map((p) => p.name)).toEqual([
+      "Plain Pouch",
+      "Square Box – Red Floral",
+    ]); // active only unless asked
     expect(await names({ status: "active" })).toEqual([
       "Plain Pouch",
       "Square Box – Red Floral",

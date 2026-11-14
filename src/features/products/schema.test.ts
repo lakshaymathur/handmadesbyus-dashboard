@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_PHOTO_BYTES,
   margin,
   parseProductFilters,
   productSchema,
   productsUrl,
   skuSchema,
   type ProductInput,
+  uploadPhotoSchema,
 } from "./schema";
 
 describe("skuSchema", () => {
@@ -104,5 +106,26 @@ describe("product filters in the URL", () => {
       categoryId: box,
       status: "all",
     });
+  });
+});
+
+describe("uploadPhotoSchema", () => {
+  const productId = "00000000-0000-4000-8000-000000000001";
+  const file = (bytes: number) => new File([new Uint8Array(bytes)], "p.jpg");
+
+  it("caps a photo at 1.5 MB and refuses empty files", () => {
+    expect(
+      uploadPhotoSchema.safeParse({ productId, photo: file(MAX_PHOTO_BYTES) })
+        .success,
+    ).toBe(true);
+    expect(
+      uploadPhotoSchema.safeParse({
+        productId,
+        photo: file(MAX_PHOTO_BYTES + 1),
+      }).error?.issues[0]?.message,
+    ).toBe("That photo is too large (1.5 MB at most)");
+    expect(
+      uploadPhotoSchema.safeParse({ productId, photo: file(0) }).success,
+    ).toBe(false);
   });
 });

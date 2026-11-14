@@ -1,10 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
 import { FormMessage } from "@/components/form-field";
 import { Button } from "@/components/ui/button";
-import { validateThenRun } from "@/lib/client-action";
-import type { FormMessageState } from "@/lib/use-action-form";
+import { useActionButton } from "@/lib/use-action-button";
 import { setProductArchived } from "../actions";
 import { setArchivedSchema } from "../schema";
 
@@ -16,9 +14,7 @@ export function ArchiveButton({
   productId: string;
   archived: boolean;
 }) {
-  const [pending, startTransition] = useTransition();
-  const [message, setMessage] = useState<FormMessageState>(null);
-
+  const { run, pending, message } = useActionButton(setArchivedSchema);
   return (
     <div className="flex flex-col gap-2">
       <Button
@@ -26,19 +22,9 @@ export function ArchiveButton({
         variant="outline"
         className="h-11 sm:w-fit"
         disabled={pending}
-        onClick={() => {
-          setMessage(null);
-          startTransition(async () => {
-            const result = await validateThenRun(
-              setArchivedSchema,
-              { id: productId, archived: !archived },
-              setProductArchived,
-            );
-            if (result && !result.ok) {
-              setMessage({ ok: false, text: result.error });
-            }
-          });
-        }}
+        onClick={() =>
+          run(setProductArchived, { id: productId, archived: !archived })
+        }
       >
         {archived ? "Bring back" : "Archive"}
       </Button>

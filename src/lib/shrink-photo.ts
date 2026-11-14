@@ -5,12 +5,16 @@
 /** Longest side of a stored product photo, in pixels. */
 export const PHOTO_MAX_SIDE = 1600;
 
+/** JPEG qualities to try, best first, until the photo fits `maxBytes`. */
+const QUALITIES = [0.85, 0.75, 0.6, 0.45];
+
 /**
  * Re-encodes an image the browser can read as a JPEG at most PHOTO_MAX_SIDE on its
- * longest side, upright (EXIF rotation applied) and on white (for transparent PNGs).
- * Throws if the browser can't read the file as an image.
+ * longest side, upright (EXIF rotation applied) and on white (for transparent PNGs),
+ * lowering the quality until it's at most `maxBytes`. Throws if the browser can't read
+ * the file as an image.
  */
-export async function shrinkPhoto(file: File, quality = 0.85): Promise<File> {
+export async function shrinkPhoto(file: File, maxBytes: number): Promise<File> {
   const bitmap = await createImageBitmap(file, {
     imageOrientation: "from-image",
   });
@@ -29,11 +33,16 @@ export async function shrinkPhoto(file: File, quality = 0.85): Promise<File> {
     context.fillStyle = "#fff";
     context.fillRect(0, 0, width, height);
     context.drawImage(bitmap, 0, 0, width, height);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/jpeg", quality),
-    );
-    if (!blob) throw new Error("Couldn't encode the photo");
-    return new File([blob], "photo.jpg", { type: "image/jpeg" });
+    let blob: Blob | null = null;
+    for (const quality of QUALITIES) {
+      blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/jpeg", quality),
+      );
+      if (!blob) throw new Error("Couldn't encode the photo");
+      if (blob.size <= maxBytes) break;
+    }
+    // Still too big at the lowest quality: upload anyway; the server's cap says so.
+    return new File([blob ?? new Blob()], "photo.jpg", { type: "image/jpeg" });
   } finally {
     bitmap.close();
   }

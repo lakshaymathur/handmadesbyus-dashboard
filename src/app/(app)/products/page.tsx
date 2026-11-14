@@ -6,8 +6,9 @@ import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { ProductFilterBar } from "@/features/products/components/product-filters";
 import {
-  getProductFormChoices,
+  getProductFilterChoices,
   getProducts,
+  type ProductSummary,
 } from "@/features/products/queries";
 import {
   parseProductFilters,
@@ -63,7 +64,11 @@ async function FiltersAndGrid({
   searchParams,
 }: Pick<PageProps<"/products">, "searchParams">) {
   const filters = parseProductFilters(await searchParams);
-  const choices = await getProductFormChoices();
+  // Independent: load the dropdowns and the products together.
+  const [choices, products] = await Promise.all([
+    getProductFilterChoices(),
+    getProducts(filters),
+  ]);
   return (
     <>
       <ProductFilterBar
@@ -72,15 +77,18 @@ async function FiltersAndGrid({
         types={choices.types}
         colours={choices.colours}
       />
-      <Suspense fallback={<GridSkeleton />}>
-        <Grid filters={filters} />
-      </Suspense>
+      <Grid filters={filters} products={products} />
     </>
   );
 }
 
-async function Grid({ filters }: { filters: ProductFilters }) {
-  const products = await getProducts(filters);
+function Grid({
+  filters,
+  products,
+}: {
+  filters: ProductFilters;
+  products: ProductSummary[];
+}) {
   if (products.length === 0) {
     const unfiltered =
       !filters.categoryId &&

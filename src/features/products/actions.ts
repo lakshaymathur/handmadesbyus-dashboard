@@ -55,9 +55,15 @@ async function skuError(tx: Executor, sku: string, excludeId?: string) {
 
 /**
  * Checks the chosen category, list entries and options exist and fit together (the
- * database only knows they're list items and options).
+ * database only knows they're list items and options). `kept` are options the product
+ * already offers in this category: they may stay even if Settings has since stopped
+ * offering them for the category (otherwise the product could never be saved again).
  */
-async function checkChoices(tx: Executor, input: ProductValues) {
+async function checkChoices(
+  tx: Executor,
+  input: ProductValues,
+  kept: string[] = [],
+) {
   const [category] = await tx
     .select({ id: categories.id })
     .from(categories)
@@ -87,17 +93,20 @@ async function checkChoices(tx: Executor, input: ProductValues) {
     }
   }
 
-  if (input.optionIds.length > 0) {
+  const added = [...new Set(input.optionIds)].filter(
+    (id) => !kept.includes(id),
+  );
+  if (added.length > 0) {
     const allowed = await tx
       .select({ optionId: customisationOptionCategories.optionId })
       .from(customisationOptionCategories)
       .where(
         and(
           eq(customisationOptionCategories.categoryId, input.categoryId),
-          inArray(customisationOptionCategories.optionId, input.optionIds),
+          inArray(customisationOptionCategories.optionId, added),
         ),
       );
-    if (allowed.length !== new Set(input.optionIds).size) {
+    if (allowed.length !== added.length) {
       fieldErrors.optionIds = [
         "Some options don't apply to this category. Reload the page.",
       ];
@@ -106,6 +115,25 @@ async function checkChoices(tx: Executor, input: ProductValues) {
   if (Object.keys(fieldErrors).length > 0) {
     throw new ActionError("Please check the highlighted fields.", fieldErrors);
   }
+}
+
+/** The options a product offers now, if it stays in `categoryId` (else none are kept). */
+async function keptOptions(
+  tx: Executor,
+  productId: string,
+  categoryId: string,
+): Promise<string[]> {
+  const rows = await tx
+    .select({ optionId: productCustomisationOptions.optionId })
+    .from(productCustomisationOptions)
+    .innerJoin(products, eq(products.id, productCustomisationOptions.productId))
+    .where(
+      and(
+        eq(productCustomisationOptions.productId, productId),
+        eq(products.categoryId, categoryId),
+      ),
+    );
+  return rows.map((r) => r.optionId);
 }
 
 function columns(input: ProductValues) {
@@ -135,7 +163,11 @@ async function saving<T>(
     return await db.transaction(async (tx) => {
       const taken = await skuError(tx, input.sku, excludeId);
       if (taken) throw taken;
-      await checkChoices(tx, input);
+      await checkChoices(
+        tx,
+        input,
+        excludeId ? await keptOptions(tx, excludeId, input.categoryId) : [],
+      );
       return save(tx);
     });
   } catch (error) {

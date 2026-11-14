@@ -52,7 +52,22 @@ async function NewProduct({
       />
       <ProductForm
         initial={
-          original ? { ...productToInput(original), sku: "" } : EMPTY_PRODUCT
+          original
+            ? {
+                ...productToInput(original),
+                sku: "",
+                // A new product only gets options its category offers today.
+                optionIds: original.options
+                  .map((o) => o.id)
+                  .filter((id) =>
+                    choices.options.some(
+                      (o) =>
+                        o.id === id &&
+                        o.categoryIds.includes(original.categoryId),
+                    ),
+                  ),
+              }
+            : EMPTY_PRODUCT
         }
         choices={choices}
       />
