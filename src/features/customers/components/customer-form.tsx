@@ -21,13 +21,12 @@ import {
   type CustomerInput,
 } from "../schema";
 import {
-  AddressFields,
-  EMPTY_ADDRESS,
   SelectField,
   TextArea,
   TextField,
   type Bind,
-} from "./fields";
+} from "@/components/form-fields";
+import { AddressFields, EMPTY_ADDRESS } from "./address-fields";
 
 const SOURCE_OPTIONS = CUSTOMER_SOURCES.map((s) => ({
   value: s,

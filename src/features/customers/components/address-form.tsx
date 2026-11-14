@@ -17,7 +17,8 @@ import {
   updateAddressSchema,
   type AddressInput,
 } from "../schema";
-import { AddressFields, EMPTY_ADDRESS, type Bind } from "./fields";
+import type { Bind } from "@/components/form-fields";
+import { AddressFields, EMPTY_ADDRESS } from "./address-fields";
 
 type Props =
   | { mode: "add"; customerId: string }

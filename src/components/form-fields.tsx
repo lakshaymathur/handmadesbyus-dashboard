@@ -2,11 +2,9 @@
 
 import { FormField } from "@/components/form-field";
 import { Input } from "@/components/ui/input";
-import { INDIAN_STATES } from "@/lib/indian-states";
 import { cn } from "@/lib/utils";
-import type { AddressInput } from "../schema";
 
-// Form controls shared by the customer and address forms.
+// Form controls for forms built on useActionForm (customers, products, …).
 
 export const selectClass =
   "h-11 w-full rounded-lg border border-input bg-transparent px-2.5 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive md:text-sm dark:bg-input/30";
@@ -35,7 +33,7 @@ export function TextField<Values>({
   name: keyof Values & string;
   label: string;
   help?: string;
-  inputMode?: "tel" | "numeric" | "email";
+  inputMode?: "tel" | "numeric" | "decimal" | "email";
   type?: "tel" | "email";
   autoComplete?: string;
   autoCapitalize?: "none" | "words";
@@ -146,67 +144,3 @@ export function SelectField<Values>({
     </FormField>
   );
 }
-
-const STATE_OPTIONS = INDIAN_STATES.map((s) => ({ value: s, label: s }));
-
-/** The address fields (§2.1), in the order people say an Indian address. */
-export function AddressFields<Values extends AddressInput>({
-  bind,
-}: {
-  bind: Bind<Values>;
-}) {
-  return (
-    <>
-      <TextField
-        bind={bind}
-        name="line1"
-        label="House / flat no., building"
-        autoComplete="address-line1"
-      />
-      <TextField
-        bind={bind}
-        name="line2"
-        label="Street / area (optional)"
-        autoComplete="address-line2"
-      />
-      <TextField
-        bind={bind}
-        name="landmark"
-        label="Landmark (optional)"
-        help="e.g. Near Hanuman temple"
-      />
-      <div className="grid grid-cols-2 gap-3">
-        <TextField
-          bind={bind}
-          name="city"
-          label="City"
-          autoComplete="address-level2"
-        />
-        <TextField
-          bind={bind}
-          name="pin"
-          label="PIN code"
-          inputMode="numeric"
-          autoComplete="postal-code"
-        />
-      </div>
-      <SelectField
-        bind={bind}
-        name="state"
-        label="State"
-        options={STATE_OPTIONS}
-        placeholder="Choose a state"
-        autoComplete="address-level1"
-      />
-    </>
-  );
-}
-
-export const EMPTY_ADDRESS: AddressInput = {
-  line1: "",
-  line2: "",
-  landmark: "",
-  city: "",
-  state: "" as AddressInput["state"],
-  pin: "",
-};
