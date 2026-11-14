@@ -3,21 +3,21 @@
 _Last updated: 2026-11-14 · Keep this file under ~80 lines. Finished detail lives in git history._
 
 ## Current focus
-**M4: Orders** (§2.4–2.6, §3.2). **Plan mode first** (CLAUDE.md): the user approves the approach before any code. M3 is done: product grid + filters, add/edit, photos, archive, duplicate, delete-if-unused, `/code-review` findings fixed.
+**M5: Order dashboard** (§3.1). **Plan mode first** (CLAUDE.md). M4 is done: create/edit/duplicate orders, pricing, per-item stages, status changes with history, customer order totals, `/code-review` findings fixed.
 
 ## Next steps
-1. **Plan M4 in plan mode**: read §2.4, §2.5, §2.6, §3.2 and the `orders`, `order_items`, `order_item_customisations`, `status_history` tables in `src/db/schema.ts`. Cover: create flow on a phone (customer pick/add, items, customisations, pricing, address snapshot), order code via `nextOrderCode(tx, orderDate)`, discounts, totals.
-2. **Pricing logic** as pure functions with unit tests (CLAUDE.md): item = snapshot unit price + customisation prices × qty; flat and % discounts (basis points); shipping charged; never recompute from the catalogue.
-3. **One status-change function** for order status and item stages that writes `status_history`, sets `delivered_date` on delivery and clears it when moving back (DB CHECK requires it).
-4. Product picker uses `getProducts()` (active only by default) and offers only options linked to the product's category.
-5. Customer page: fill in order history, lifetime spend and balance due (placeholder since M2).
+1. **Plan M5 in plan mode** (§3.1): Home becomes the dashboard. Cards (code, customer, @handle, tap-to-call, thumbnails + "2× Square Box – Red", status badge, overdue/due-soon/urgent, promised "in 3 days"/"2 days late", total). Payment status and AWB/partner wait for M6.
+2. **Filters and group-by** kept in the URL (like `/products`): default hides Delivered and Cancelled, sorted by promised date; filter by status, customer, product, category, colour, order/promised date ranges, overdue; group by status, promised (Today / This week / Later), customer, product.
+3. **Search** box (order code, customer name, mobile, @handle; AWB in M6): reuse `getOrders` rules (`features/orders/queries.ts`); totals via `totalsFor`.
+4. **Kanban** (dnd-kit): one column per status; dropping a card calls `changeStatus` (rules and history in `src/db/order-status.ts`; refusals shown on the card). Quick action "Advance to next status" on cards; "Record payment" comes with M6.
+5. Replace the `/orders` list with the dashboard (or redirect), keep `/orders/new` and `/orders/[id]`.
 
 ## Milestones (MVP)
 - [x] **M0** Project setup: scaffold, Docker, DB, auth, layout, lib helpers
 - [x] **M1** Data model + Settings: full schema, managed lists, categories + production stages, customisation options, seed data (§2, §3.7)
 - [x] **M2** Customers: list, search, detail, addresses, duplicate warnings (§2.1, §3.3)
 - [x] **M3** Products: grid, CRUD, photos, archive, duplicate (§2.2, §3.4)
-- [ ] **M4** Orders: create/detail, items, customisations, pricing, per-item stages, status history (§2.4–2.6, §3.2)
+- [x] **M4** Orders: create/detail, items, customisations, pricing, per-item stages, status history (§2.4–2.6, §3.2)
 - [ ] **M5** Order dashboard: cards, filters, group-by, search, Kanban, quick actions (§3.1)
 - [ ] **M6** Shipments + Payments (§2.7, §2.8, §3.5)
 - [ ] **M7** Expenses + Financials (§2.9, §3.6)
@@ -41,11 +41,15 @@ _Last updated: 2026-11-14 · Keep this file under ~80 lines. Finished detail liv
 - Customers without a source (imports) show "Not recorded" and stay unset when edited; adding requires one.
 - **Products**: product IDs stored in capitals, unique ignoring case. The list defaults to active products. Duplicate = Add form prefilled from `?from=` (no ID, no photos). Delete only if never ordered (FK); otherwise archive. Options Settings stops offering for a category may stay on existing products until unticked.
 - **Photos**: shrunk in the browser to 1600 px JPEG (≤1.5 MB, quality lowered to fit; metadata dropped); server accepts JPEG/PNG/WebP by magic bytes; up to 5 per product. Served through `/api/photos/[id]` (session-checked, streamed, private cache, nosniff, sandbox CSP) instead of signed URLs, so S3 needn't be reachable from browsers. `serverActions.bodySizeLimit` is 2 MB and applies to every action.
+- **Orders**: Ready for pickup is one tap (only once every item is at its last stage; never automatic). Delivered needs every item finished but no shipment (hand-over); delivered date between the order date and today. Docket raised needs a shipment, In transit/Returned an AWB. Any other change is allowed (corrections), always via `src/db/order-status.ts`. Leaving Cancelled clears the cancel details.
+- **Order edits** keep existing items' unit cost, category, stage and unchanged customisation snapshots (even if Settings retired the option); new items/customisations take today's prices; items can be added only In production / On hold. Duplicate uses today's prices. Order code never changes.
+- **Customer totals**: order count excludes cancelled; lifetime spend = delivered orders' totals (§3.6 revenue).
 - Phone testing on the LAN: add the dev server's Network URL to `TRUSTED_ORIGINS` in `.env`.
 - GitHub: private repo `lakshaymathur/handmadesbyus-dashboard`. A repo-local git credential helper pushes as `lakshaymathur` whichever `gh` account is active.
 
 ## Known issues / TODO
 - M8 import must advance `id_counters` past imported customer numbers and order codes.
+- M6: payments (paid / balance due on the order and customer pages), shipments unlock Docket raised / In transit.
 - Consider a lint rule that every exported function in `features/*/queries.ts` calls `requireUser()`.
 - `npm audit`: 7 moderate issues in `@typescript-eslint` (used only for linting, not shipped in the app). Recheck after dependency updates.
 - When the startup env check fails, Next.js keeps running and returns 500s instead of exiting. Make it exit in the M9 Dockerfile (wrap `server.js`).
