@@ -8,6 +8,7 @@ import { ListSkeleton, PageHeader } from "@/components/page-header";
 import { PageSection } from "@/components/page-section";
 import { buttonVariants } from "@/components/ui/button";
 import { ArchiveButton } from "@/features/products/components/archive-button";
+import { PhotoManager } from "@/features/products/components/photo-manager";
 import { getProduct } from "@/features/products/queries";
 import { margin } from "@/features/products/schema";
 import { formatMoney } from "@/lib/money";
@@ -84,6 +85,14 @@ async function Product({
           This product costs more to make than it sells for.
         </p>
       )}
+
+      <PageSection title="Photos">
+        <PhotoManager
+          productId={product.id}
+          productName={product.name}
+          photos={product.photos}
+        />
+      </PageSection>
 
       <PageSection title="Details">
         <Facts

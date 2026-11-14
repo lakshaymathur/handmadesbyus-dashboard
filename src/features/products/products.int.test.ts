@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock(
   "next/headers",
@@ -14,10 +14,20 @@ import {
   customisationOptions,
   listItems,
   productCustomisationOptions,
+  productPhotos,
   products,
 } from "@/db/schema";
 import { signInTestUser, signOutTestUser } from "@/db/test/session";
-import { createProduct, setProductArchived, updateProduct } from "./actions";
+import { GET as servePhoto } from "@/app/api/photos/[id]/route";
+import { getStorage } from "@/lib/storage";
+import {
+  createProduct,
+  deleteProductPhoto,
+  makeMainPhoto,
+  setProductArchived,
+  updateProduct,
+  uploadProductPhoto,
+} from "./actions";
 import { getProduct, getProductFormChoices, getProducts } from "./queries";
 import type { ProductInput } from "./schema";
 
@@ -311,5 +321,155 @@ describe("form choices", () => {
       ["Latkan", 1],
       ["Sticker", 2],
     ]);
+  });
+});
+
+describe("photos", () => {
+  // Tables are wiped between tests, stored files aren't: delete what the test stored.
+  afterEach(async () => {
+    const rows = await db
+      .select({ key: productPhotos.storageKey })
+      .from(productPhotos);
+    await Promise.all(rows.map((r) => getStorage().delete(r.key)));
+  });
+
+  /** A file whose first bytes say JPEG (the server reads the type, not the name). */
+  const jpeg = (label: string) =>
+    new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), label], "x.jpg", {
+      type: "image/jpeg",
+    });
+
+  async function upload(productId: string, label: string) {
+    return uploadProductPhoto({ productId, photo: jpeg(label) });
+  }
+
+  const order = async (productId: string) =>
+    (
+      await db
+        .select({
+          key: productPhotos.storageKey,
+          position: productPhotos.position,
+        })
+        .from(productPhotos)
+        .where(eq(productPhotos.productId, productId))
+        .orderBy(productPhotos.position)
+    ).map((p) => p.position);
+
+  /** Requests a photo URL from the app's photo route, as an <img> would. */
+  function get(url: string) {
+    const id = url.replace("/api/photos/", "");
+    return servePhoto(new Request(`http://localhost:3000${url}`), {
+      params: Promise.resolve({ id }),
+    });
+  }
+
+  it("stores photos in order, serves them through the app, and makes the first the thumbnail", async () => {
+    const id = await add();
+    expect(await upload(id, "first")).toEqual({ ok: true, data: undefined });
+    await upload(id, "second");
+    const product = await getProduct(id);
+    expect(product?.photos).toHaveLength(2);
+    const url = product?.photos[0]?.url ?? "";
+    expect(url).toMatch(/^\/api\/photos\/[0-9a-f-]{36}$/);
+    const response = await get(url);
+    expect(response.status).toBe(200);
+    expect(Object.fromEntries(response.headers)).toMatchObject({
+      "content-type": "image/jpeg",
+      "cache-control": "private, max-age=86400, immutable",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": "default-src 'none'; sandbox",
+    });
+    expect(await response.text()).toContain("first");
+    const [listed] = await getProducts();
+    expect(listed?.thumbnailUrl).toBe(url);
+  });
+
+  it("serves photos only to signed-in users, and 404s anything else", async () => {
+    const id = await add();
+    await upload(id, "private");
+    const url = (await getProduct(id))?.photos[0]?.url ?? "";
+    expect((await get("/api/photos/not-a-uuid")).status).toBe(404);
+    expect(
+      (await get("/api/photos/00000000-0000-4000-8000-000000000000")).status,
+    ).toBe(404);
+    signOutTestUser();
+    await expect(get(url)).rejects.toMatchObject({
+      digest: expect.stringContaining("/login"),
+    });
+  });
+
+  it("serves a file by its real type and refuses non-images", async () => {
+    const id = await add();
+    const svg = new File(["<svg onload=alert(1)>"], "photo.jpg", {
+      type: "image/jpeg",
+    });
+    expect(await uploadProductPhoto({ productId: id, photo: svg })).toEqual({
+      ok: false,
+      error: "That isn't a photo we can use. Use JPEG, PNG or WebP.",
+      fieldErrors: { photo: ["Use a JPEG, PNG or WebP photo"] },
+    });
+    expect(await db.$count(productPhotos)).toBe(0);
+  });
+
+  it("allows 5, and removes the stored file when a 6th is refused", async () => {
+    const id = await add();
+    for (let i = 0; i < 5; i++) await upload(id, `p${i}`);
+    const put = vi.spyOn(getStorage(), "put");
+    expect(await upload(id, "too many")).toEqual({
+      ok: false,
+      error: "A product can have 5 photos. Delete one first.",
+    });
+    const refusedKey = put.mock.calls[0]?.[0] ?? "";
+    put.mockRestore();
+    expect(refusedKey).toMatch(new RegExp(`^products/${id}/.+\\.jpg$`));
+    expect(await getStorage().exists(refusedKey)).toBe(false);
+    expect(await order(id)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it("keeps the limit when photos are added at the same time", async () => {
+    const id = await add();
+    for (let i = 0; i < 3; i++) await upload(id, `p${i}`);
+    const results = await Promise.all(
+      [0, 1, 2, 3].map((i) => upload(id, `race${i}`)),
+    );
+    expect(results.filter((r) => r.ok)).toHaveLength(2);
+    expect(await order(id)).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it("makes another photo the main one, keeping the rest in order", async () => {
+    const id = await add();
+    for (const label of ["a", "b", "c"]) await upload(id, label);
+    const photos = (await getProduct(id))?.photos ?? [];
+    await makeMainPhoto({ id: photos[2]?.id ?? "" });
+    const after = (await getProduct(id))?.photos.map((p) => p.id);
+    expect(after).toEqual([photos[2]?.id, photos[0]?.id, photos[1]?.id]);
+  });
+
+  it("deletes a photo and its file, closing up the gap", async () => {
+    const id = await add();
+    for (const label of ["a", "b", "c"]) await upload(id, label);
+    const [first] = await db
+      .select()
+      .from(productPhotos)
+      .where(eq(productPhotos.position, 0));
+    expect(await deleteProductPhoto({ id: first?.id ?? "" })).toEqual({
+      ok: true,
+      data: undefined,
+    });
+    expect(await order(id)).toEqual([0, 1]);
+    expect(await getStorage().exists(first?.storageKey ?? "")).toBe(false);
+  });
+
+  it("refuses photos for a product that doesn't exist, without keeping the file", async () => {
+    const put = vi.spyOn(getStorage(), "put");
+    expect(
+      await upload("00000000-0000-4000-8000-000000000000", "orphan"),
+    ).toEqual({
+      ok: false,
+      error: "That product no longer exists. Reload the page.",
+    });
+    const key = put.mock.calls[0]?.[0] ?? "";
+    put.mockRestore();
+    expect(await getStorage().exists(key)).toBe(false);
   });
 });

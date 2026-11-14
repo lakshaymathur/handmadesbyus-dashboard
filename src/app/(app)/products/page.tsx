@@ -1,4 +1,4 @@
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, Package, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -32,7 +32,7 @@ export default function ProductsPage() {
   );
 }
 
-// A plain list for now; the photo grid and filters come with photos (M3 steps 2–3).
+// A list with thumbnails for now; the photo grid and filters come in M3 step 3.
 async function ProductList() {
   const products = await getProducts();
   if (products.length === 0) {
@@ -53,6 +53,22 @@ async function ProductList() {
             href={`/products/${p.id}`}
             className="flex min-h-14 items-center gap-3 px-3 py-2 hover:bg-muted"
           >
+            <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
+              {p.thumbnailUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element -- photos come from /api/photos, which needs the session cookie; the image optimiser fetches without it
+                <img
+                  src={p.thumbnailUrl}
+                  alt=""
+                  loading="lazy"
+                  className={cn(
+                    "size-full object-cover",
+                    p.archived && "opacity-50",
+                  )}
+                />
+              ) : (
+                <Package className="size-5 text-muted-foreground" aria-hidden />
+              )}
+            </span>
             <span className="flex min-w-0 flex-1 flex-col">
               <span
                 className={cn(

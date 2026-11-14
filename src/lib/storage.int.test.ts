@@ -20,6 +20,19 @@ describe("storage against local S3", () => {
     await storage.delete(key); // deleting again is fine
   });
 
+  it("streams a file back, with its size, and returns null for a missing one", async () => {
+    const key = newKey("test", "stream.bin");
+    const bytes = new Uint8Array(1000).map((_, i) => i % 251);
+    await storage.put(key, bytes, "application/octet-stream");
+    const file = await storage.get(key);
+    expect(file?.size).toBe(1000);
+    expect(
+      new Uint8Array(await new Response(file?.body).arrayBuffer()),
+    ).toEqual(bytes);
+    await storage.delete(key);
+    expect(await storage.get(key)).toBeNull();
+  });
+
   it("stores binary files byte for byte", async () => {
     const key = newKey("test", "photo.jpg");
     const bytes = new Uint8Array(256).map((_, i) => i);

@@ -22,6 +22,10 @@ export type Storage = {
     body: Uint8Array<ArrayBuffer> | ArrayBuffer | Blob | string,
     contentType: string,
   ): Promise<void>;
+  /** Streams a file, or null if there's none at `key`. */
+  get(
+    key: string,
+  ): Promise<{ body: ReadableStream<Uint8Array>; size: number | null } | null>;
   /** True if a file exists at `key`. */
   exists(key: string): Promise<boolean>;
   /** Deletes a file. Deleting a missing file is not an error. */
@@ -104,6 +108,19 @@ export function createStorage(config: StorageConfig): Storage {
         headers: { "content-type": contentType },
       });
       if (!response.ok) await fail("upload", key, response);
+    },
+
+    async get(key) {
+      const response = await send("GET", key);
+      if (response.status === 404) return null;
+      if (!response.ok || !response.body) await fail("download", key, response);
+      const header = response.headers.get("content-length");
+      const length = header === null ? NaN : Number(header);
+      return {
+        // Checked just above: fail() throws when there's no body.
+        body: response.body as ReadableStream<Uint8Array>,
+        size: Number.isSafeInteger(length) && length >= 0 ? length : null,
+      };
     },
 
     async exists(key) {

@@ -1,4 +1,4 @@
-import { asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import { byName } from "@/db/order";
@@ -8,9 +8,17 @@ import {
   customisationOptions,
   listItems,
   productCustomisationOptions,
+  productPhotos,
   products,
 } from "@/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { IMAGE_EXTENSIONS, type ImageType } from "@/lib/image-type";
+
+/**
+ * Where the app serves a photo (src/app/api/photos/[id]/route.ts): only signed-in users
+ * can load it, and the storage service needn't be reachable from browsers.
+ */
+const photoUrl = (photoId: string) => `/api/photos/${photoId}`;
 
 const types = alias(listItems, "types");
 const colours = alias(listItems, "colours");
@@ -24,12 +32,14 @@ export type ProductSummary = {
   colour: string | null;
   price: number;
   archived: boolean;
+  /** URL of the main photo, if there is one. */
+  thumbnailUrl: string | null;
 };
 
-/** Every product: active first, then by name. */
+/** Every product with its main photo: active first, then by name. */
 export async function getProducts(): Promise<ProductSummary[]> {
   await requireUser();
-  return db
+  const rows = await db
     .select({
       id: products.id,
       sku: products.sku,
@@ -38,12 +48,26 @@ export async function getProducts(): Promise<ProductSummary[]> {
       colour: colours.name,
       price: products.price,
       archived: sql<boolean>`${products.archivedAt} IS NOT NULL`,
+      thumbnailId: productPhotos.id,
     })
     .from(products)
     .innerJoin(categories, eq(categories.id, products.categoryId))
     .leftJoin(colours, eq(colours.id, products.colourId))
+    .leftJoin(
+      productPhotos,
+      and(
+        eq(productPhotos.productId, products.id),
+        eq(productPhotos.position, 0),
+      ),
+    )
     .orderBy(sql`${products.archivedAt} IS NOT NULL`, byName(products.name));
+  return rows.map(({ thumbnailId, ...row }) => ({
+    ...row,
+    thumbnailUrl: thumbnailId ? photoUrl(thumbnailId) : null,
+  }));
 }
+
+export type ProductPhoto = { id: string; url: string };
 
 export type ProductDetail = {
   id: string;
@@ -65,12 +89,14 @@ export type ProductDetail = {
   cost: number;
   archived: boolean;
   options: { id: string; name: string }[];
+  /** In order; the first is the main photo. */
+  photos: ProductPhoto[];
 };
 
 /** One product with its list names and customisation options, or null. */
 export async function getProduct(id: string): Promise<ProductDetail | null> {
   await requireUser();
-  const [[product], options] = await Promise.all([
+  const [[product], options, photos] = await Promise.all([
     db
       .select({
         id: products.id,
@@ -110,8 +136,18 @@ export async function getProduct(id: string): Promise<ProductDetail | null> {
         asc(customisationOptions.sortOrder),
         byName(customisationOptions.name),
       ),
+    db
+      .select({ id: productPhotos.id })
+      .from(productPhotos)
+      .where(eq(productPhotos.productId, id))
+      .orderBy(asc(productPhotos.position), asc(productPhotos.createdAt)),
   ]);
-  return product ? { ...product, options } : null;
+  if (!product) return null;
+  return {
+    ...product,
+    options,
+    photos: photos.map((p) => ({ id: p.id, url: photoUrl(p.id) })),
+  };
 }
 
 export type Choice = { id: string; name: string; active: boolean };
@@ -172,4 +208,23 @@ export async function getProductFormChoices(): Promise<ProductFormChoices> {
         .map((l) => l.categoryId),
     })),
   };
+}
+
+/** What the photo route needs to stream a photo: its storage key and image type. */
+export async function getPhotoFile(
+  photoId: string,
+): Promise<{ key: string; type: ImageType } | null> {
+  await requireUser();
+  const [row] = await db
+    .select({ key: productPhotos.storageKey })
+    .from(productPhotos)
+    .where(eq(productPhotos.id, photoId));
+  if (!row) return null;
+  // Served as the type its key was given at upload (from the file's bytes), never as
+  // whatever the storage service reports.
+  const extension = row.key.split(".").pop();
+  const type = (Object.keys(IMAGE_EXTENSIONS) as ImageType[]).find(
+    (t) => IMAGE_EXTENSIONS[t] === extension,
+  );
+  return type ? { key: row.key, type } : null;
 }

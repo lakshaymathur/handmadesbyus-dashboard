@@ -1,6 +1,6 @@
 "use server";
 
-import { and, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import type { z } from "zod";
@@ -12,13 +12,19 @@ import {
   customisationOptionCategories,
   listItems,
   productCustomisationOptions,
+  productPhotos,
   products,
 } from "@/db/schema";
 import { ActionError, assertFound, authedAction } from "@/lib/auth/action";
+import { IMAGE_EXTENSIONS, sniffImageType } from "@/lib/image-type";
+import { getStorage, newKey } from "@/lib/storage";
 import {
+  MAX_PHOTOS,
+  photoIdSchema,
   productSchema,
   setArchivedSchema,
   updateProductSchema,
+  uploadPhotoSchema,
 } from "./schema";
 
 // Products (§2.2, §3.4). The SKU is unique ignoring case; type/colour/design must come
@@ -226,6 +232,150 @@ export const setProductArchived = authedAction(
       .where(eq(products.id, id))
       .returning({ id: products.id });
     assertFound(rows, GONE);
+    refresh();
+  },
+);
+
+// --- Photos (§2.2: up to 5, the first is the thumbnail) ----------------------------
+
+const PHOTO_GONE = "That photo no longer exists. Reload the page.";
+
+/** Locks the product so photo changes for it happen one at a time. */
+async function lockProduct(tx: Executor, productId: string): Promise<void> {
+  const rows = await tx
+    .select({ id: products.id })
+    .from(products)
+    .where(eq(products.id, productId))
+    .for("no key update");
+  assertFound(rows, GONE);
+}
+
+/** The photo's product, locked; the photo is re-read under the lock. */
+async function lockPhoto(tx: Executor, photoId: string) {
+  const [before] = await tx
+    .select({ productId: productPhotos.productId })
+    .from(productPhotos)
+    .where(eq(productPhotos.id, photoId));
+  if (!before) throw new ActionError(PHOTO_GONE);
+  await lockProduct(tx, before.productId);
+  const [photo] = await tx
+    .select({
+      productId: productPhotos.productId,
+      storageKey: productPhotos.storageKey,
+    })
+    .from(productPhotos)
+    .where(eq(productPhotos.id, photoId));
+  if (!photo) throw new ActionError(PHOTO_GONE);
+  return photo;
+}
+
+/** Writes positions 0, 1, 2… in the given order. */
+async function renumber(
+  tx: Executor,
+  ids: string[],
+  update: { updatedBy: string },
+) {
+  for (const [position, id] of ids.entries()) {
+    await tx
+      .update(productPhotos)
+      .set({ position, ...update })
+      .where(eq(productPhotos.id, id));
+  }
+}
+
+async function photoIds(tx: Executor, productId: string): Promise<string[]> {
+  const rows = await tx
+    .select({ id: productPhotos.id })
+    .from(productPhotos)
+    .where(eq(productPhotos.productId, productId))
+    .orderBy(asc(productPhotos.position), asc(productPhotos.createdAt));
+  return rows.map((r) => r.id);
+}
+
+/** Deletes a stored file after the database no longer points at it; failures are logged only. */
+async function deleteStored(key: string) {
+  try {
+    await getStorage().delete(key);
+  } catch (error) {
+    console.error(
+      "Couldn't delete a stored photo (left orphaned):",
+      key,
+      error,
+    );
+  }
+}
+
+/**
+ * Adds a photo at the end. The file's real type is read from its bytes (JPEG, PNG or
+ * WebP only), and that type is what it's stored and served as.
+ */
+export const uploadProductPhoto = authedAction(
+  uploadPhotoSchema,
+  async ({ productId, photo }, { audit }) => {
+    const bytes = new Uint8Array(await photo.arrayBuffer());
+    const type = sniffImageType(bytes);
+    if (!type) {
+      throw new ActionError(
+        "That isn't a photo we can use. Use JPEG, PNG or WebP.",
+        {
+          photo: ["Use a JPEG, PNG or WebP photo"],
+        },
+      );
+    }
+    // Upload first (no lock held during the transfer); undo it if the row can't be added.
+    const key = newKey(
+      `products/${productId}`,
+      `photo.${IMAGE_EXTENSIONS[type]}`,
+    );
+    await getStorage().put(key, bytes, type);
+    try {
+      await db.transaction(async (tx) => {
+        await lockProduct(tx, productId);
+        const ids = await photoIds(tx, productId);
+        if (ids.length >= MAX_PHOTOS) {
+          throw new ActionError(
+            `A product can have ${MAX_PHOTOS} photos. Delete one first.`,
+          );
+        }
+        await tx.insert(productPhotos).values({
+          productId,
+          storageKey: key,
+          position: ids.length,
+          ...audit.create,
+        });
+      });
+    } catch (error) {
+      await deleteStored(key);
+      throw error;
+    }
+    refresh();
+  },
+);
+
+/** Makes this the main photo (the thumbnail), keeping the others in order after it. */
+export const makeMainPhoto = authedAction(
+  photoIdSchema,
+  async ({ id }, { audit }) => {
+    await db.transaction(async (tx) => {
+      const { productId } = await lockPhoto(tx, id);
+      const ids = await photoIds(tx, productId);
+      await renumber(tx, [id, ...ids.filter((p) => p !== id)], audit.update);
+    });
+    refresh();
+  },
+);
+
+/** Deletes a photo (and its stored file); the rest close up, so the first stays main. */
+export const deleteProductPhoto = authedAction(
+  photoIdSchema,
+  async ({ id }, { audit }) => {
+    const key = await db.transaction(async (tx) => {
+      const { productId, storageKey } = await lockPhoto(tx, id);
+      await tx.delete(productPhotos).where(eq(productPhotos.id, id));
+      await renumber(tx, await photoIds(tx, productId), audit.update);
+      return storageKey;
+    });
+    await deleteStored(key);
     refresh();
   },
 );

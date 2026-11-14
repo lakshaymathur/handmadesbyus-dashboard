@@ -19,6 +19,11 @@ const nextConfig: NextConfig = {
   // Self-contained server build for Docker / any Node host (keeps hosting portable).
   output: "standalone",
   cacheComponents: true,
+  experimental: {
+    // Product photos are shrunk in the browser, then uploaded through a server action;
+    // the action itself caps a photo at 4 MB (features/products/schema.ts).
+    serverActions: { bodySizeLimit: "5mb" },
+  },
   partialPrefetching: true,
   turbopack: {
     rules: {

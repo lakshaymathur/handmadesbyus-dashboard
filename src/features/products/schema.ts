@@ -82,3 +82,19 @@ export function margin(
       price === 0 ? null : Math.round(((price - cost) / price) * 1000) / 10,
   };
 }
+
+/** §2.2: up to 5 photos; the first is the thumbnail. */
+export const MAX_PHOTOS = 5;
+
+/** Photos are shrunk in the browser first (~0.3–1 MB); this is the server's hard cap. */
+export const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
+
+export const uploadPhotoSchema = z.object({
+  productId: z.uuid(),
+  photo: z
+    .file("Choose a photo")
+    .min(1, "That photo is empty")
+    .max(MAX_PHOTO_BYTES, "That photo is too large (4 MB at most)"),
+});
+
+export const photoIdSchema = z.object({ id: z.uuid() });

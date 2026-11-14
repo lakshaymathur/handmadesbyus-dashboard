@@ -40,7 +40,7 @@ eslint-rules/          custom lint rules (authed-action)
 - **Portability**: plain Postgres + S3 API only. No Supabase/Vercel/AWS-specific SDKs or features. All config comes from env vars, documented in `.env.example` and validated in `lib/env.ts` (add new ones to both).
 - **Money**: store as integer **paise**. Format with `formatMoney`, parse form input with `moneyField()` (`lib/money`). Never use floating-point rupees.
 - **Dates**: moments are `timestamptz`, shown with `formatDate`/`formatDateTime` (DD/MM/YYYY, IST). Calendar dates (delivered, expense date) are Postgres `date` / `"YYYY-MM-DD"` strings (`lib/dates`).
-- **Files**: private bucket via `getStorage()` (`lib/storage`); keys from `newKey()`; show files with `signedUrl()`.
+- **Files**: private bucket via `getStorage()` (`lib/storage`); keys from `newKey()`. Show files through an app route that checks the session and streams from storage (e.g. `/api/photos/[id]`), not signed URLs: S3 needn't be reachable from browsers. Uploaded images are typed by their bytes (`lib/image-type`).
 - **Snapshots**: order items copy unit price, unit cost and customisation prices at order time. Orders copy the delivery address. Never recompute history from the current catalogue.
 - **Status changes** (order status and item production stage) always go through one function that also writes a `status_history` row.
 - **No hard deletes** of used products/orders: archive or cancel instead. Every table has `created_at/by` and `updated_at/by` (except Better Auth's tables: users, sessions, accounts, verifications, rate_limits; and the internal `id_counters`).
