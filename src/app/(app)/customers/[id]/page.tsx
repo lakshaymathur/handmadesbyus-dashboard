@@ -1,9 +1,12 @@
-import { AtSign, Mail, Phone } from "lucide-react";
+import { AtSign, Mail, Pencil, Phone, Plus } from "lucide-react";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { z } from "zod";
 import { ListSkeleton, PageHeader } from "@/components/page-header";
+import { buttonVariants } from "@/components/ui/button";
+import { AddressButtons } from "@/features/customers/components/address-form";
 import { formatAddress, formatMobile } from "@/features/customers/format";
 import { getCustomer } from "@/features/customers/queries";
 import { SOURCE_LABELS } from "@/features/customers/schema";
@@ -59,6 +62,18 @@ async function Customer({
         title={customer.name}
         description={`${customer.code} · ${details.join(" · ")}`}
         back={{ href: "/customers", label: "Customers" }}
+        action={
+          <Link
+            href={`/customers/${customer.id}/edit`}
+            className={buttonVariants({
+              variant: "outline",
+              className: "h-11",
+            })}
+          >
+            <Pencil aria-hidden />
+            Edit
+          </Link>
+        }
       />
 
       <div className="flex flex-col">
@@ -114,10 +129,33 @@ async function Customer({
                   </span>
                 )}
                 {formatAddress(address)}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href={`/customers/${customer.id}/addresses/${address.id}`}
+                    className={buttonVariants({
+                      variant: "outline",
+                      className: "h-10",
+                    })}
+                  >
+                    Edit
+                  </Link>
+                  <AddressButtons
+                    addressId={address.id}
+                    isDefault={address.isDefault}
+                    isOnly={customer.addresses.length === 1}
+                  />
+                </div>
               </li>
             ))}
           </ul>
         )}
+        <Link
+          href={`/customers/${customer.id}/addresses/new`}
+          className={buttonVariants({ variant: "outline", className: "h-11" })}
+        >
+          <Plus aria-hidden />
+          Add an address
+        </Link>
       </Section>
 
       <Section title="Orders">

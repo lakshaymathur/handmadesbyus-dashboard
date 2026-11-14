@@ -96,7 +96,7 @@ export const SOURCE_LABELS: Record<CustomerSource, string> = {
 };
 
 /** The customer's own fields (no address). */
-const customerShape = {
+export const customerShape = {
   mobile: mobileSchema,
   instagramHandle: instagramHandleSchema,
   firstName: nameSchema,
@@ -142,8 +142,32 @@ export const createCustomerSchema = z.object({
 
 export type CreateCustomerInput = z.input<typeof createCustomerSchema>;
 
-/** For the live "already exists" check while typing. */
+/** Editing a customer's own details (addresses are edited one at a time). */
+export const updateCustomerSchema = z.object({
+  id: z.uuid(),
+  ...customerShape,
+});
+
+export type CustomerInput = z.input<z.ZodObject<typeof customerShape>>;
+
+/** For the live "already exists" check while typing; `excludeId` is the customer being edited. */
 export const duplicateCheckSchema = z.object({
   mobile: z.string().max(40),
   instagramHandle: z.string().max(200),
+  excludeId: z.uuid().optional(),
 });
+
+export type AddressInput = z.input<typeof addressSchema>;
+
+export const addAddressSchema = z.object({
+  customerId: z.uuid(),
+  ...addressShape,
+  makeDefault: z.boolean(),
+});
+
+export const updateAddressSchema = z.object({
+  id: z.uuid(),
+  ...addressShape,
+});
+
+export const addressIdSchema = z.object({ id: z.uuid() });

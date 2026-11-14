@@ -171,3 +171,33 @@ export async function getCustomer(id: string): Promise<CustomerDetail | null> {
     addresses,
   };
 }
+
+export type AddressDetail = CustomerAddress & {
+  customerId: string;
+  customerName: string;
+};
+
+/** One address with whose it is, or null if there's no such address. */
+export async function getAddress(id: string): Promise<AddressDetail | null> {
+  await requireUser();
+  const [row] = await db
+    .select({
+      id: customerAddresses.id,
+      line1: customerAddresses.line1,
+      line2: customerAddresses.line2,
+      landmark: customerAddresses.landmark,
+      city: customerAddresses.city,
+      state: customerAddresses.state,
+      pin: customerAddresses.pin,
+      isDefault: customerAddresses.isDefault,
+      customerId: customers.id,
+      firstName: customers.firstName,
+      lastName: customers.lastName,
+    })
+    .from(customerAddresses)
+    .innerJoin(customers, eq(customers.id, customerAddresses.customerId))
+    .where(eq(customerAddresses.id, id));
+  if (!row) return null;
+  const { firstName, lastName, ...address } = row;
+  return { ...address, customerName: customerName({ firstName, lastName }) };
+}

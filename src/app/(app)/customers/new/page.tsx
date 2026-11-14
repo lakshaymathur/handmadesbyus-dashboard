@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { PageHeader } from "@/components/page-header";
-import { NewCustomerForm } from "@/features/customers/components/new-customer-form";
+import { CustomerForm } from "@/features/customers/components/customer-form";
 
 export const metadata: Metadata = { title: "Add a customer · HandMadesByUs" };
 
@@ -11,7 +11,7 @@ export default function NewCustomerPage() {
         title="Add a customer"
         back={{ href: "/customers", label: "Customers" }}
       />
-      <NewCustomerForm />
+      <CustomerForm />
     </section>
   );
 }
