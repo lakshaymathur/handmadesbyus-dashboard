@@ -18,7 +18,6 @@ import type { OrderItemDetail } from "../queries";
 import { validateThenRun } from "@/lib/client-action";
 import { formatMoney, parseMoney } from "@/lib/money";
 import { useActionForm } from "@/lib/use-action-form";
-import { cn } from "@/lib/utils";
 import { createOrder, updateOrder } from "../actions";
 import { orderTotals, type Discount } from "../pricing";
 import {
@@ -31,6 +30,7 @@ import {
   type OrderItemInput,
 } from "../schema";
 import { CustomerPicker } from "./customer-picker";
+import { PriceBreakdown } from "./price-breakdown";
 import { ItemEditor, Thumbnail } from "./item-editor";
 
 const CHANNEL_OPTIONS = [
@@ -450,28 +450,15 @@ export function OrderForm({
             inputMode="decimal"
             help="0 for free shipping"
           />
-          <dl className="grid grid-cols-[1fr_auto] gap-y-1 rounded-lg bg-muted p-3 text-sm">
-            <dt>Items</dt>
-            <dd className="text-right">
-              {formatMoney(totals.subtotal - totals.customisations)}
-            </dd>
-            <dt>Customisations</dt>
-            <dd className="text-right">{formatMoney(totals.customisations)}</dd>
-            {totals.discount > 0 && (
-              <>
-                <dt>Discount</dt>
-                <dd className="text-right">−{formatMoney(totals.discount)}</dd>
-              </>
-            )}
-            <dt>Shipping</dt>
-            <dd className="text-right">
-              {formatMoney(totals.shippingCharged)}
-            </dd>
-            <dt className={cn("border-t pt-1 font-semibold")}>Total</dt>
-            <dd className="border-t pt-1 text-right font-semibold">
-              {formatMoney(totals.total)}
-            </dd>
-          </dl>
+          <PriceBreakdown
+            totals={totals}
+            warning={
+              discount.type === "flat" && discount.paise > totals.subtotal
+                ? "The discount is more than the items' total; it can't be saved like this."
+                : null
+            }
+            className="rounded-lg bg-muted p-3"
+          />
           <TextArea
             bind={bind}
             name="notes"

@@ -88,7 +88,8 @@ function ChangeStatusForm({
   const idPrefix = useId();
   const choices = ORDER_STATUSES.filter((s) => s !== status);
   const form = useActionForm<StatusChangeFormInput>(
-    { ...base, to: choices[0] ?? "in_production", deliveredDate: today },
+    // Nothing preselected: a stray Save mustn't move the order anywhere.
+    { ...base, to: "", deliveredDate: today },
     (values) => validateThenRun(statusChangeSchema, values, changeStatus),
     { onSuccess: onDone },
   );
@@ -112,6 +113,7 @@ function ChangeStatusForm({
         name="to"
         label={`Move from “${STATUS_LABELS[status]}” to`}
         options={choices.map((s) => ({ value: s, label: STATUS_LABELS[s] }))}
+        placeholder="Choose the new status"
       />
       {to === "delivered" && (
         <TextField

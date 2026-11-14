@@ -55,15 +55,27 @@ type Props =
       customerId?: undefined;
       initial?: undefined;
       onCreated?: (customer: CustomerDetail) => void;
+      /** With onCreated: a duplicate warning offers to use that customer instead. */
+      onChooseExisting?: (customerId: string) => void;
     }
   /** Editing an existing customer's own details. */
-  | { customerId: string; initial: CustomerInput; onCreated?: undefined };
+  | {
+      customerId: string;
+      initial: CustomerInput;
+      onCreated?: undefined;
+      onChooseExisting?: undefined;
+    };
 
 /**
  * Add a customer with their first address, or edit one's details (§2.1). Warns as soon as
  * a mobile or handle belongs to someone else (§3.3).
  */
-export function CustomerForm({ customerId, initial, onCreated }: Props) {
+export function CustomerForm({
+  customerId,
+  initial,
+  onCreated,
+  onChooseExisting,
+}: Props) {
   const idPrefix = useId();
   const form = useActionForm<CreateCustomerInput>(
     { ...(initial ?? EMPTY_CUSTOMER), ...EMPTY_ADDRESS },
@@ -144,6 +156,22 @@ export function CustomerForm({ customerId, initial, onCreated }: Props) {
   function duplicateNote(key: keyof Duplicates) {
     const duplicate = duplicates[key];
     if (!duplicate) return undefined;
+    // From another form (an order), following a link would lose that form: offer to
+    // use the existing customer instead.
+    if (onChooseExisting) {
+      return (
+        <p className="text-amber-700 dark:text-amber-400">
+          Already used by {duplicate.code} {duplicate.name}.{" "}
+          <button
+            type="button"
+            className="underline"
+            onClick={() => onChooseExisting(duplicate.id)}
+          >
+            Use {duplicate.name}
+          </button>
+        </p>
+      );
+    }
     return (
       <p className="text-amber-700 dark:text-amber-400">
         Already used by{" "}

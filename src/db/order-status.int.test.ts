@@ -242,6 +242,14 @@ describe("order status", () => {
     });
   });
 
+  it("refuses a delivered date before the order date", async () => {
+    await finishAll();
+    await expect(
+      change({ to: "delivered", deliveredDate: "2026-10-31" }), // ordered 2026-11-01
+    ).rejects.toThrow("The delivered date can't be before the order date.");
+    await change({ to: "delivered", deliveredDate: "2026-11-01" }); // same day is fine
+  });
+
   it("Cancelled needs a reason and records whether a refund is owed", async () => {
     await expect(change({ to: "cancelled" })).rejects.toThrow(/why/);
     await change({
@@ -256,7 +264,12 @@ describe("order status", () => {
     });
     expect((await history()).at(-1)?.note).toBe("Changed their mind");
     await change({ to: "on_hold" }); // corrections are allowed
-    expect((await status())?.status).toBe("on_hold");
+    // Leaving Cancelled clears the cancel details (the reason stays in the history).
+    expect(await status()).toMatchObject({
+      status: "on_hold",
+      cancelReason: null,
+      refundOwed: false,
+    });
   });
 
   it("Docket raised needs a shipment, In transit an AWB", async () => {

@@ -9,6 +9,7 @@ import { PageSection } from "@/components/page-section";
 import { buttonVariants } from "@/components/ui/button";
 import { formatAddress, formatMobile } from "@/features/customers/format";
 import { Thumbnail } from "@/features/orders/components/item-editor";
+import { PriceBreakdown } from "@/features/orders/components/price-breakdown";
 import { StageControls } from "@/features/orders/components/stage-controls";
 import { StatusBadge } from "@/features/orders/components/status-badge";
 import { StatusControls } from "@/features/orders/components/status-controls";
@@ -18,7 +19,7 @@ import {
   stageChangeProblem,
 } from "@/features/orders/lifecycle";
 import { lineTotal, unitPriceWithExtras } from "@/features/orders/pricing";
-import { getOrder, type OrderDetail } from "@/features/orders/queries";
+import { getOrder } from "@/features/orders/queries";
 import { CHANNEL_LABELS, type Channel } from "@/features/orders/schema";
 import { getGeneralSettings } from "@/features/settings/queries";
 import { formatDateOnly, formatDateTime, todayIST } from "@/lib/dates";
@@ -193,7 +194,12 @@ async function Order({ params }: Pick<PageProps<"/orders/[id]">, "params">) {
       </PageSection>
 
       <PageSection title="Price">
-        <PriceBreakdown order={order} />
+        <PriceBreakdown totals={order.totals}>
+          <dt className="text-muted-foreground">Paid / balance due</dt>
+          <dd className="text-right text-muted-foreground">
+            With payments (M6)
+          </dd>
+        </PriceBreakdown>
       </PageSection>
 
       <PageSection title="Delivery address">
@@ -230,33 +236,5 @@ async function Order({ params }: Pick<PageProps<"/orders/[id]">, "params">) {
         </ol>
       </PageSection>
     </>
-  );
-}
-
-function PriceBreakdown({ order }: { order: OrderDetail }) {
-  const t = order.totals;
-  return (
-    <dl className="grid grid-cols-[1fr_auto] gap-y-1 text-sm">
-      <dt>Items</dt>
-      <dd className="text-right">
-        {formatMoney(t.subtotal - t.customisations)}
-      </dd>
-      <dt>Customisations</dt>
-      <dd className="text-right">{formatMoney(t.customisations)}</dd>
-      {t.discount > 0 && (
-        <>
-          <dt>Discount</dt>
-          <dd className="text-right">−{formatMoney(t.discount)}</dd>
-        </>
-      )}
-      <dt>Shipping</dt>
-      <dd className="text-right">{formatMoney(t.shippingCharged)}</dd>
-      <dt className="border-t pt-1 font-semibold">Total</dt>
-      <dd className="border-t pt-1 text-right font-semibold">
-        {formatMoney(t.total)}
-      </dd>
-      <dt className="text-muted-foreground">Paid / balance due</dt>
-      <dd className="text-right text-muted-foreground">With payments (M6)</dd>
-    </dl>
   );
 }

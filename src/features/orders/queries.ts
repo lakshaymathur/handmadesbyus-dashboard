@@ -14,14 +14,15 @@ import {
   statusHistory,
   users,
 } from "@/db/schema";
+import { mobileSearchDigits } from "@/features/customers/schema";
 import { requireUser } from "@/lib/auth/session";
+import { likeEscape } from "@/lib/like";
+import { photoUrl } from "@/lib/photo-url";
 import { formatCustomerId } from "@/lib/ids";
 import { customerName } from "@/features/customers/format";
 import { lastStage, type OrderStatus, type Stage } from "./lifecycle";
 import { orderTotals, type Discount, type OrderTotals } from "./pricing";
 import { customerOrderStats, type CustomerOrderStats } from "./stats";
-
-const photoUrl = (photoId: string) => `/api/photos/${photoId}`;
 
 /** How many orders the list shows at once. */
 export const ORDER_LIST_LIMIT = 100;
@@ -100,9 +101,6 @@ export type OrderSummary = {
   total: number;
 };
 
-/** Escapes LIKE wildcards so a search matches them literally. */
-const likeEscape = (text: string) => text.replace(/[\\%_]/g, (c) => `\\${c}`);
-
 /**
  * Orders matching `query` (order code, or the customer's name or mobile), newest first,
  * at most ORDER_LIST_LIMIT. M5's dashboard replaces this list.
@@ -116,7 +114,7 @@ export async function getOrders(
   await requireUser();
   const q = query.trim();
   const pattern = `%${likeEscape(q)}%`;
-  const rows = await db
+  const listQuery = db
     .select({
       id: orders.id,
       code: orders.code,
@@ -145,15 +143,20 @@ export async function getOrders(
                 sql`${customers.firstName} || ' ' || coalesce(${customers.lastName}, '')`,
                 pattern,
               ),
-              ilike(
-                customers.mobile,
-                `%${likeEscape(q.replace(/\D/g, "") || q)}%`,
-              ),
+              // Only a query that looks like (part of) a phone number searches
+              // mobiles: "0001" means an order code, not every mobile with 0001.
+              /^[\d\s+()]+$/.test(q) && mobileSearchDigits(q).length >= 5
+                ? ilike(
+                    customers.mobile,
+                    `%${likeEscape(mobileSearchDigits(q))}%`,
+                  )
+                : undefined,
             ),
       ),
     )
     .orderBy(desc(orders.orderDate), desc(orders.code))
-    .limit(limit ?? Number.MAX_SAFE_INTEGER);
+    .$dynamic();
+  const rows = await (limit === null ? listQuery : listQuery.limit(limit));
   const totals = await totalsFor(rows);
   return rows.map((row) => ({
     id: row.id,

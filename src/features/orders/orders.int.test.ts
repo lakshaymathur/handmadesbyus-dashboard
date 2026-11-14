@@ -372,6 +372,10 @@ describe("the orders list", () => {
     ]);
     expect(await getOrders("ananya")).toHaveLength(2);
     expect(await getOrders("98100 00001")).toHaveLength(2);
+    // Part of an order code doesn't match mobiles (9810000001 contains "0001").
+    expect((await getOrders("0001")).map((o) => o.code)).toEqual([
+      "HMU-2611-0001",
+    ]);
     expect(await getOrders("nobody")).toEqual([]);
   });
 });

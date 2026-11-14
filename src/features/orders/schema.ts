@@ -171,7 +171,10 @@ export const stageChangeSchema = z.object({
 export const statusChangeSchema = z
   .object({
     orderId: z.uuid(),
-    to: z.enum(ORDER_STATUSES),
+    // "" until a status is chosen (the form starts with nothing selected).
+    to: z
+      .enum([...ORDER_STATUSES, ""])
+      .pipe(z.enum(ORDER_STATUSES, "Choose the new status")),
     note: optionalText(500),
     /** Delivered: when ("" = today). */
     deliveredDate: z.union([dateOnlyField(), z.literal("")]),

@@ -3,6 +3,7 @@ import {
   discountOf,
   orderItemSchema,
   orderSchema,
+  statusChangeSchema,
   type OrderInput,
 } from "./schema";
 
@@ -108,6 +109,23 @@ describe("discountOf", () => {
     ).toBeNull();
     expect(discountOf({ discountType: "none", discountValue: "" })).toEqual({
       type: "none",
+    });
+  });
+});
+
+describe("statusChangeSchema", () => {
+  it("needs a status to be chosen", () => {
+    const result = statusChangeSchema.safeParse({
+      orderId: id(1),
+      to: "",
+      note: "",
+      deliveredDate: "",
+      cancelReason: "",
+      refundOwed: false,
+    });
+    expect(result.error?.issues[0]).toMatchObject({
+      path: ["to"],
+      message: "Choose the new status",
     });
   });
 });

@@ -28,15 +28,18 @@ export class OrderRuleError extends Error {
 
 const GONE = "That order no longer exists. Reload the page.";
 
-/** Locks the order row for the rest of the transaction and returns its status. */
-async function lockOrder(tx: Executor, orderId: string): Promise<OrderStatus> {
+/** Locks the order row for the rest of the transaction; returns its status and date. */
+async function lockOrder(
+  tx: Executor,
+  orderId: string,
+): Promise<{ status: OrderStatus; orderDate: string }> {
   const [row] = await tx
-    .select({ status: orders.status })
+    .select({ status: orders.status, orderDate: orders.orderDate })
     .from(orders)
     .where(eq(orders.id, orderId))
     .for("update");
   if (!row) throw new OrderRuleError(GONE);
-  return row.status;
+  return row;
 }
 
 /** What the lifecycle rules need to know about an order (its items and shipments). */
@@ -104,24 +107,32 @@ export async function changeOrderStatus(
   tx: Executor,
   input: StatusChangeInput,
 ): Promise<void> {
-  const from = await lockOrder(tx, input.orderId);
+  const { status: from, orderDate } = await lockOrder(tx, input.orderId);
   const problem = statusChangeProblem(
     from,
     { to: input.to, cancelReason: input.cancelReason },
     await statusFacts(tx, input.orderId),
   );
   if (problem) throw new OrderRuleError(problem);
+  const deliveredDate = input.deliveredDate ?? todayIST();
+  if (input.to === "delivered" && deliveredDate < orderDate) {
+    // Revenue counts on this date (§3.6): never before the order existed.
+    throw new OrderRuleError(
+      "The delivered date can't be before the order date.",
+    );
+  }
 
   const cancelReason = input.cancelReason?.trim() || null;
   await tx
     .update(orders)
     .set({
       status: input.to,
-      deliveredDate:
-        input.to === "delivered" ? (input.deliveredDate ?? todayIST()) : null,
+      deliveredDate: input.to === "delivered" ? deliveredDate : null,
+      // Cancel details describe the current cancellation only; the reason stays in the
+      // history note. Leaving Cancelled clears "refund owed".
       ...(input.to === "cancelled"
         ? { cancelReason, refundOwed: input.refundOwed ?? false }
-        : {}),
+        : { cancelReason: null, refundOwed: false }),
       updatedBy: input.userId,
     })
     .where(eq(orders.id, input.orderId));
@@ -152,7 +163,7 @@ export async function setItemStages(
   tx: Executor,
   input: StageChangeInput,
 ): Promise<void> {
-  const status = await lockOrder(tx, input.orderId);
+  const { status } = await lockOrder(tx, input.orderId);
   const problem = stageChangeProblem(status);
   if (problem) throw new OrderRuleError(problem);
 

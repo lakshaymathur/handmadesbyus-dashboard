@@ -24,14 +24,9 @@ import {
   products,
 } from "@/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { photoUrl } from "@/lib/photo-url";
 import type { ProductFilters } from "./schema";
 import { IMAGE_EXTENSIONS, type ImageType } from "@/lib/image-type";
-
-/**
- * Where the app serves a photo (src/app/api/photos/[id]/route.ts): only signed-in users
- * can load it, and the storage service needn't be reachable from browsers.
- */
-const photoUrl = (photoId: string) => `/api/photos/${photoId}`;
 
 const types = alias(listItems, "types");
 const colours = alias(listItems, "colours");

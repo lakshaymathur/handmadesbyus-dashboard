@@ -109,6 +109,10 @@ export function CustomerPicker({ selected, onSelect, error }: Props) {
             setAdding(false);
             onSelect(customer);
           }}
+          onChooseExisting={(id) => {
+            setAdding(false);
+            void choose(id);
+          }}
         />
       </div>
     );

@@ -2,6 +2,7 @@ import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db/client";
 import { customerAddresses, customers } from "@/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import { likeEscape } from "@/lib/like";
 import { formatCustomerId, parseCustomerId } from "@/lib/ids";
 import { customerName } from "./format";
 import { mobileSearchDigits, normalizeInstagramHandle } from "./schema";
@@ -18,11 +19,6 @@ export type CustomerSummary = {
   instagramHandle: string | null;
   city: string | null;
 };
-
-/** Escapes LIKE wildcards so "50%" or "a_b" match literally. */
-function likeEscape(text: string): string {
-  return text.replace(/[\\%_]/g, (c) => `\\${c}`);
-}
 
 /**
  * What a search box query matches: a customer ID ("C-0012", "c12"), a mobile number or
