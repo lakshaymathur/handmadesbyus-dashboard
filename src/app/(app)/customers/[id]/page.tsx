@@ -1,0 +1,130 @@
+import { AtSign, Mail, Phone } from "lucide-react";
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { Suspense } from "react";
+import { z } from "zod";
+import { ListSkeleton, PageHeader } from "@/components/page-header";
+import { formatAddress, formatMobile } from "@/features/customers/format";
+import { getCustomer } from "@/features/customers/queries";
+import { SOURCE_LABELS } from "@/features/customers/schema";
+import { formatDate } from "@/lib/dates";
+
+export const metadata: Metadata = { title: "Customer · HandMadesByUs" };
+
+// The id comes from the URL, so it's read inside <Suspense>.
+export default function CustomerPage({ params }: PageProps<"/customers/[id]">) {
+  return (
+    <section className="flex flex-col gap-6">
+      <Suspense fallback={<ListSkeleton withHeader />}>
+        <Customer params={params} />
+      </Suspense>
+    </section>
+  );
+}
+
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-t pt-6">
+      <h2 className="font-heading text-lg font-semibold">{title}</h2>
+      {children}
+    </div>
+  );
+}
+
+const linkRow =
+  "flex min-h-11 items-center gap-3 rounded-lg px-1 hover:bg-muted wrap-anywhere";
+
+async function Customer({
+  params,
+}: Pick<PageProps<"/customers/[id]">, "params">) {
+  const { id } = await params;
+  if (!z.uuid().safeParse(id).success) notFound();
+  const customer = await getCustomer(id);
+  if (!customer) notFound();
+
+  const details = [
+    customer.source && SOURCE_LABELS[customer.source],
+    `Added ${formatDate(customer.createdAt)}`,
+  ].filter(Boolean);
+
+  return (
+    <>
+      <PageHeader
+        title={customer.name}
+        description={`${customer.code} · ${details.join(" · ")}`}
+        back={{ href: "/customers", label: "Customers" }}
+      />
+
+      <div className="flex flex-col">
+        <a href={`tel:+91${customer.mobile}`} className={linkRow}>
+          <Phone className="size-4 text-muted-foreground" aria-hidden />
+          {formatMobile(customer.mobile)}
+        </a>
+        {customer.altMobile && (
+          <a href={`tel:+91${customer.altMobile}`} className={linkRow}>
+            <Phone className="size-4 text-muted-foreground" aria-hidden />
+            {formatMobile(customer.altMobile)}
+            <span className="text-sm text-muted-foreground">(alternate)</span>
+          </a>
+        )}
+        {customer.instagramHandle && (
+          <a
+            href={`https://www.instagram.com/${customer.instagramHandle}/`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={linkRow}
+          >
+            <AtSign className="size-4 text-muted-foreground" aria-hidden />
+            {customer.instagramHandle}
+          </a>
+        )}
+        {customer.email && (
+          <a href={`mailto:${customer.email}`} className={linkRow}>
+            <Mail className="size-4 text-muted-foreground" aria-hidden />
+            {customer.email}
+          </a>
+        )}
+      </div>
+
+      {customer.notes && (
+        <Section title="Notes">
+          <p className="wrap-anywhere whitespace-pre-line">{customer.notes}</p>
+        </Section>
+      )}
+
+      <Section title="Addresses">
+        {customer.addresses.length === 0 ? (
+          <p className="text-muted-foreground">No address yet.</p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {customer.addresses.map((address) => (
+              <li
+                key={address.id}
+                className="rounded-lg border p-3 wrap-anywhere"
+              >
+                {address.isDefault && (
+                  <span className="mb-1 block text-sm font-medium text-muted-foreground">
+                    Default
+                  </span>
+                )}
+                {formatAddress(address)}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Section>
+
+      <Section title="Orders">
+        <p className="text-muted-foreground">
+          Order history, lifetime spend and balance due arrive with orders (M4).
+        </p>
+      </Section>
+    </>
+  );
+}
