@@ -1,11 +1,17 @@
 "use server";
 
 import { asc, eq, inArray } from "drizzle-orm";
+import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import type { Executor } from "@/db/connect";
 import { nextOrderCode } from "@/db/id-counters";
-import { recordOrderCreated } from "@/db/order-status";
+import {
+  changeOrderStatus,
+  OrderRuleError,
+  recordOrderCreated,
+  setItemStages,
+} from "@/db/order-status";
 import {
   customers,
   customisationChoices,
@@ -18,8 +24,14 @@ import {
   products,
 } from "@/db/schema";
 import { ActionError, authedAction } from "@/lib/auth/action";
+import { todayIST } from "@/lib/dates";
 import { orderTotals } from "./pricing";
-import { orderSchema, type OrderValues } from "./schema";
+import {
+  orderSchema,
+  stageChangeSchema,
+  statusChangeSchema,
+  type OrderValues,
+} from "./schema";
 
 // Orders (§2.4, §2.5, §3.2). Items snapshot the product's price and cost and each
 // customisation's price and cost when they're added (CLAUDE.md: snapshots); the delivery
@@ -308,5 +320,55 @@ export const createOrder = authedAction(
       return row.id;
     });
     redirect(`/orders/${id}`);
+  },
+);
+
+/** Runs a lifecycle change; a rule's refusal becomes a message for the person. */
+async function asRuleError<T>(change: () => Promise<T>): Promise<T> {
+  try {
+    return await change();
+  } catch (error) {
+    if (error instanceof OrderRuleError) throw new ActionError(error.message);
+    throw error;
+  }
+}
+
+/** Moves items to other production stages (forward or back), recording each move. */
+export const changeItemStages = authedAction(
+  stageChangeSchema,
+  async ({ orderId, items }, { user }) => {
+    await asRuleError(() =>
+      db.transaction((tx) =>
+        setItemStages(tx, { orderId, items, userId: user.id }),
+      ),
+    );
+    refresh();
+  },
+);
+
+/** Moves the order to another status (§2.6), recording it in the history. */
+export const changeStatus = authedAction(
+  statusChangeSchema,
+  async (change, { user }) => {
+    const deliveredDate = change.deliveredDate || todayIST();
+    if (change.to === "delivered" && deliveredDate > todayIST()) {
+      throw new ActionError("The delivered date can't be in the future.", {
+        deliveredDate: ["Can't be after today"],
+      });
+    }
+    await asRuleError(() =>
+      db.transaction((tx) =>
+        changeOrderStatus(tx, {
+          orderId: change.orderId,
+          to: change.to,
+          userId: user.id,
+          note: change.note,
+          deliveredDate,
+          cancelReason: change.cancelReason,
+          refundOwed: change.refundOwed,
+        }),
+      ),
+    );
+    refresh();
   },
 );

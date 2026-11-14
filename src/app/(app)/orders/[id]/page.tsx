@@ -7,12 +7,19 @@ import { ListSkeleton, PageHeader } from "@/components/page-header";
 import { PageSection } from "@/components/page-section";
 import { formatAddress, formatMobile } from "@/features/customers/format";
 import { Thumbnail } from "@/features/orders/components/item-editor";
+import { StageControls } from "@/features/orders/components/stage-controls";
 import { StatusBadge } from "@/features/orders/components/status-badge";
-import { STATUS_LABELS } from "@/features/orders/lifecycle";
+import { StatusControls } from "@/features/orders/components/status-controls";
+import {
+  deadlineFlag,
+  STATUS_LABELS,
+  stageChangeProblem,
+} from "@/features/orders/lifecycle";
 import { lineTotal, unitPriceWithExtras } from "@/features/orders/pricing";
 import { getOrder, type OrderDetail } from "@/features/orders/queries";
 import { CHANNEL_LABELS, type Channel } from "@/features/orders/schema";
-import { formatDateOnly, formatDateTime } from "@/lib/dates";
+import { getGeneralSettings } from "@/features/settings/queries";
+import { formatDateOnly, formatDateTime, todayIST } from "@/lib/dates";
 import { formatMoney } from "@/lib/money";
 
 export const metadata: Metadata = { title: "Order · HandMadesByUs" };
@@ -31,8 +38,18 @@ export default function OrderPage({ params }: PageProps<"/orders/[id]">) {
 async function Order({ params }: Pick<PageProps<"/orders/[id]">, "params">) {
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  const order = await getOrder(id);
+  const [order, settings] = await Promise.all([
+    getOrder(id),
+    getGeneralSettings(),
+  ]);
   if (!order) notFound();
+  const today = todayIST();
+  const flag = deadlineFlag(
+    order.status,
+    order.promisedDate,
+    today,
+    settings.dueSoonDays,
+  );
 
   return (
     <>
@@ -45,7 +62,26 @@ async function Order({ params }: Pick<PageProps<"/orders/[id]">, "params">) {
         {order.priority === "urgent" && (
           <span className="text-sm font-semibold text-destructive">Urgent</span>
         )}
+        {flag === "overdue" && (
+          <span className="text-sm font-semibold text-destructive">
+            Overdue
+          </span>
+        )}
+        {flag === "due_soon" && (
+          <span className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+            Due soon
+          </span>
+        )}
       </div>
+
+      <PageSection title="Status">
+        <StatusControls
+          orderId={order.id}
+          status={order.status}
+          allFinished={order.items.every((i) => i.finished)}
+          today={today}
+        />
+      </PageSection>
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
         <dt className="text-muted-foreground">Customer</dt>
@@ -119,6 +155,14 @@ async function Order({ params }: Pick<PageProps<"/orders/[id]">, "params">) {
             </li>
           ))}
         </ul>
+      </PageSection>
+
+      <PageSection title="Production">
+        <StageControls
+          orderId={order.id}
+          items={order.items}
+          lockedReason={stageChangeProblem(order.status)}
+        />
       </PageSection>
 
       <PageSection title="Price">

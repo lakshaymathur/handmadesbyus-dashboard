@@ -5,6 +5,7 @@ import { MAX_PRICE_PAISE } from "@/features/products/schema";
 import { dateOnlyField } from "@/lib/dates";
 import { moneyField, parseMoney } from "@/lib/money";
 import type { Same } from "@/lib/types";
+import { ORDER_STATUSES } from "./lifecycle";
 import type { Discount } from "./pricing";
 import { parsePercent } from "./pricing";
 
@@ -156,3 +157,36 @@ export function discountOf(fields: {
     }
   }
 }
+
+/** Moving order items to other production stages (§2.6). */
+export const stageChangeSchema = z.object({
+  orderId: z.uuid(),
+  items: z
+    .array(z.object({ itemId: z.uuid(), stageId: z.uuid() }))
+    .min(1)
+    .max(MAX_ITEMS),
+});
+
+/** Changing an order's status (§2.6). Extra fields depend on the new status. */
+export const statusChangeSchema = z
+  .object({
+    orderId: z.uuid(),
+    to: z.enum(ORDER_STATUSES),
+    note: optionalText(500),
+    /** Delivered: when ("" = today). */
+    deliveredDate: z.union([dateOnlyField(), z.literal("")]),
+    /** Cancelled: why, and whether a refund is owed. */
+    cancelReason: optionalText(500),
+    refundOwed: z.boolean(),
+  })
+  .superRefine((change, ctx) => {
+    if (change.to === "cancelled" && !change.cancelReason) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["cancelReason"],
+        message: "Say why the order is cancelled",
+      });
+    }
+  });
+
+export type StatusChangeFormInput = z.input<typeof statusChangeSchema>;

@@ -26,7 +26,7 @@ import {
   findCustomers,
   getCustomerForPicker,
 } from "@/features/customers/actions";
-import { createOrder } from "./actions";
+import { changeItemStages, changeStatus, createOrder } from "./actions";
 import { getOrder, getOrders } from "./queries";
 import type { OrderInput, OrderItemInput } from "./schema";
 
@@ -403,6 +403,109 @@ describe("the order form's customer picker", () => {
         name: "Meera",
         addresses: [{ city: "Bengaluru", isDefault: true }],
       },
+    });
+  });
+});
+
+describe("moving an order along", () => {
+  const status = (
+    orderId: string,
+    to: Parameters<typeof changeStatus>[0]["to"],
+    extra = {},
+  ) =>
+    changeStatus({
+      orderId,
+      to,
+      note: "",
+      deliveredDate: "",
+      cancelReason: "",
+      refundOwed: false,
+      ...extra,
+    });
+
+  async function finishAll(orderId: string) {
+    const items = (await getOrder(orderId))?.items ?? [];
+    return changeItemStages({
+      orderId,
+      items: items.map((i) => ({
+        itemId: i.id,
+        stageId: i.stages.at(-1)?.id ?? "",
+      })),
+    });
+  }
+
+  it("advances items, then readies, delivers and records each step", async () => {
+    const id = await create();
+    expect(await status(id, "ready_for_pickup")).toEqual({
+      ok: false,
+      error: "Finish every item first (0 of 2 are at their last stage).",
+    });
+    expect(await finishAll(id)).toEqual({ ok: true, data: undefined });
+    expect(await status(id, "ready_for_pickup")).toEqual({
+      ok: true,
+      data: undefined,
+    });
+    expect(
+      await status(id, "delivered", { deliveredDate: "2026-11-14" }),
+    ).toEqual({
+      ok: true,
+      data: undefined,
+    });
+    const saved = await getOrder(id);
+    expect(saved).toMatchObject({
+      status: "delivered",
+      deliveredDate: "2026-11-14",
+    });
+    expect(saved?.items.every((i) => i.finished)).toBe(true);
+    // Newest first: delivered, ready, two stage moves, created.
+    expect(saved?.history.map((h) => h.toStatus ?? h.toStage)).toEqual([
+      "delivered",
+      "ready_for_pickup",
+      expect.any(String),
+      expect.any(String),
+      "in_production",
+    ]);
+    expect(saved?.history[0]?.by).toBe("asha"); // who did it
+  });
+
+  it("refuses a delivered date in the future, and stage changes once ready", async () => {
+    const id = await create();
+    await finishAll(id);
+    expect(
+      await status(id, "delivered", { deliveredDate: "2999-01-01" }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { deliveredDate: ["Can't be after today"] },
+    });
+    await status(id, "ready_for_pickup");
+    const item = (await getOrder(id))?.items[0];
+    expect(
+      await changeItemStages({
+        orderId: id,
+        items: [{ itemId: item?.id ?? "", stageId: item?.stages[0]?.id ?? "" }],
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/Move it back/),
+    });
+  });
+
+  it("asks why when cancelling", async () => {
+    const id = await create();
+    expect(await status(id, "cancelled")).toMatchObject({
+      ok: false,
+      fieldErrors: { cancelReason: ["Say why the order is cancelled"] },
+    });
+    expect(
+      await status(id, "cancelled", {
+        cancelReason: "Wrong colour",
+        refundOwed: true,
+      }),
+    ).toEqual({ ok: true, data: undefined });
+    expect(await getOrder(id)).toMatchObject({
+      status: "cancelled",
+      cancelReason: "Wrong colour",
+      refundOwed: true,
     });
   });
 });
