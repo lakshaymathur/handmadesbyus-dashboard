@@ -1,4 +1,13 @@
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
 import { byName } from "@/db/order";
@@ -7,11 +16,13 @@ import {
   customisationOptionCategories,
   customisationOptions,
   listItems,
+  orderItems,
   productCustomisationOptions,
   productPhotos,
   products,
 } from "@/db/schema";
 import { requireUser } from "@/lib/auth/session";
+import type { ProductFilters } from "./schema";
 import { IMAGE_EXTENSIONS, type ImageType } from "@/lib/image-type";
 
 /**
@@ -36,8 +47,10 @@ export type ProductSummary = {
   thumbnailUrl: string | null;
 };
 
-/** Every product with its main photo: active first, then by name. */
-export async function getProducts(): Promise<ProductSummary[]> {
+/** Products matching `filters`, with their main photo: active first, then by name. */
+export async function getProducts(
+  filters: ProductFilters = { status: "all" },
+): Promise<ProductSummary[]> {
   await requireUser();
   const rows = await db
     .select({
@@ -58,6 +71,20 @@ export async function getProducts(): Promise<ProductSummary[]> {
       and(
         eq(productPhotos.productId, products.id),
         eq(productPhotos.position, 0),
+      ),
+    )
+    .where(
+      and(
+        filters.categoryId
+          ? eq(products.categoryId, filters.categoryId)
+          : undefined,
+        filters.typeId ? eq(products.typeId, filters.typeId) : undefined,
+        filters.colourId ? eq(products.colourId, filters.colourId) : undefined,
+        filters.status === "active"
+          ? isNull(products.archivedAt)
+          : filters.status === "archived"
+            ? isNotNull(products.archivedAt)
+            : undefined,
       ),
     )
     .orderBy(sql`${products.archivedAt} IS NOT NULL`, byName(products.name));
@@ -88,6 +115,8 @@ export type ProductDetail = {
   price: number;
   cost: number;
   archived: boolean;
+  /** On at least one order: it can be archived but not deleted. */
+  usedInOrders: boolean;
   options: { id: string; name: string }[];
   /** In order; the first is the main photo. */
   photos: ProductPhoto[];
@@ -117,6 +146,12 @@ export async function getProduct(id: string): Promise<ProductDetail | null> {
         price: products.price,
         cost: products.cost,
         archived: sql<boolean>`${products.archivedAt} IS NOT NULL`,
+        usedInOrders: exists(
+          db
+            .select({ one: sql`1` })
+            .from(orderItems)
+            .where(eq(orderItems.productId, products.id)),
+        ).mapWith(Boolean),
       })
       .from(products)
       .innerJoin(categories, eq(categories.id, products.categoryId))

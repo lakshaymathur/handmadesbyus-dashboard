@@ -98,3 +98,49 @@ export const uploadPhotoSchema = z.object({
 });
 
 export const photoIdSchema = z.object({ id: z.uuid() });
+
+export const PRODUCT_STATUSES = ["active", "archived", "all"] as const;
+export type ProductStatus = (typeof PRODUCT_STATUSES)[number];
+
+export type ProductFilters = {
+  categoryId?: string;
+  typeId?: string;
+  colourId?: string;
+  status: ProductStatus;
+};
+
+const oneParam = (value: unknown) =>
+  typeof value === "string" ? value : undefined;
+const idParam = (value: unknown) => {
+  const v = oneParam(value);
+  return v && z.uuid().safeParse(v).success ? v : undefined;
+};
+
+/**
+ * Filters from the products page URL (?category=…&type=…&colour=…&status=…). Anything
+ * unrecognised is ignored, so an old or hand-edited link still shows something.
+ */
+export function parseProductFilters(
+  params: Record<string, string | string[] | undefined>,
+): ProductFilters {
+  const status = oneParam(params.status);
+  return {
+    categoryId: idParam(params.category),
+    typeId: idParam(params.type),
+    colourId: idParam(params.colour),
+    status: PRODUCT_STATUSES.find((s) => s === status) ?? "active",
+  };
+}
+
+/** The products page URL for these filters (defaults left out, so links stay short). */
+export function productsUrl(filters: ProductFilters): string {
+  const params = new URLSearchParams();
+  if (filters.categoryId) params.set("category", filters.categoryId);
+  if (filters.typeId) params.set("type", filters.typeId);
+  if (filters.colourId) params.set("colour", filters.colourId);
+  if (filters.status !== "active") params.set("status", filters.status);
+  const query = params.toString();
+  return query ? `/products?${query}` : "/products";
+}
+
+export const productIdSchema = z.object({ id: z.uuid() });

@@ -5,8 +5,7 @@ import { z } from "zod";
 import { ListSkeleton, PageHeader } from "@/components/page-header";
 import { ProductForm } from "@/features/products/components/product-form";
 import { getProduct, getProductFormChoices } from "@/features/products/queries";
-import { paiseToInput } from "@/lib/money";
-import { mmToCmInput } from "@/lib/units";
+import { productToInput } from "@/features/products/to-input";
 
 export const metadata: Metadata = { title: "Edit product · HandMadesByUs" };
 
@@ -21,8 +20,6 @@ export default function EditProductPage({
     </section>
   );
 }
-
-const cm = (mm: number | null) => (mm === null ? "" : mmToCmInput(mm));
 
 async function EditProduct({
   params,
@@ -44,21 +41,7 @@ async function EditProduct({
       <ProductForm
         productId={id}
         choices={choices}
-        initial={{
-          sku: product.sku,
-          name: product.name,
-          categoryId: product.categoryId,
-          typeId: product.typeId ?? "",
-          colourId: product.colourId ?? "",
-          designId: product.designId ?? "",
-          length: cm(product.lengthMm),
-          width: cm(product.widthMm),
-          height: cm(product.heightMm),
-          weight: product.weightG === null ? "" : String(product.weightG),
-          price: paiseToInput(product.price),
-          cost: paiseToInput(product.cost),
-          optionIds: product.options.map((o) => o.id),
-        }}
+        initial={productToInput(product)}
       />
     </>
   );

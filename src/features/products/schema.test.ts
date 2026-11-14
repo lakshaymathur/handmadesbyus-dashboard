@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { margin, productSchema, skuSchema, type ProductInput } from "./schema";
+import {
+  margin,
+  parseProductFilters,
+  productSchema,
+  productsUrl,
+  skuSchema,
+  type ProductInput,
+} from "./schema";
 
 describe("skuSchema", () => {
   it("stores product IDs in capitals", () => {
@@ -69,5 +76,33 @@ describe("productSchema", () => {
     expect(
       Object.keys(result.error?.flatten().fieldErrors ?? {}).sort(),
     ).toEqual(["categoryId", "cost", "price"]);
+  });
+});
+
+describe("product filters in the URL", () => {
+  const box = "00000000-0000-4000-8000-000000000001";
+
+  it("reads known filters and ignores the rest", () => {
+    expect(parseProductFilters({})).toEqual({ status: "active" });
+    expect(
+      parseProductFilters({
+        category: box,
+        type: "not-an-id",
+        colour: [box, box],
+        status: "archived",
+      }),
+    ).toEqual({ categoryId: box, status: "archived" });
+    expect(parseProductFilters({ status: "deleted" }).status).toBe("active");
+  });
+
+  it("round-trips through productsUrl, leaving defaults out", () => {
+    expect(productsUrl({ status: "active" })).toBe("/products");
+    const url = productsUrl({ categoryId: box, status: "all" });
+    expect(url).toBe(`/products?category=${box}&status=all`);
+    const params = Object.fromEntries(new URL(url, "http://x").searchParams);
+    expect(parseProductFilters(params)).toEqual({
+      categoryId: box,
+      status: "all",
+    });
   });
 });

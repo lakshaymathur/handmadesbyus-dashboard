@@ -1,16 +1,24 @@
-import { ChevronRight, Package, Plus } from "lucide-react";
+import { Package, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
-import { ListSkeleton, PageHeader } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
-import { getProducts } from "@/features/products/queries";
+import { ProductFilterBar } from "@/features/products/components/product-filters";
+import {
+  getProductFormChoices,
+  getProducts,
+} from "@/features/products/queries";
+import {
+  parseProductFilters,
+  type ProductFilters,
+} from "@/features/products/schema";
 import { formatMoney } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Products · HandMadesByUs" };
 
-export default function ProductsPage() {
+export default function ProductsPage({ searchParams }: PageProps<"/products">) {
   return (
     <section className="flex flex-col gap-4">
       <PageHeader
@@ -25,35 +33,84 @@ export default function ProductsPage() {
           </Link>
         }
       />
-      <Suspense fallback={<ListSkeleton />}>
-        <ProductList />
+      {/* Filters come from the URL, so they're read inside <Suspense>. */}
+      <Suspense fallback={<GridSkeleton withFilters />}>
+        <FiltersAndGrid searchParams={searchParams} />
       </Suspense>
     </section>
   );
 }
 
-// A list with thumbnails for now; the photo grid and filters come in M3 step 3.
-async function ProductList() {
-  const products = await getProducts();
+function GridSkeleton({ withFilters = false }: { withFilters?: boolean }) {
+  return (
+    <div className="flex flex-col gap-3" aria-busy="true" aria-label="Loading">
+      {withFilters && (
+        <div className="h-28 animate-pulse rounded-lg bg-muted" />
+      )}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((i) => (
+          <div
+            key={i}
+            className="aspect-[3/4] animate-pulse rounded-lg bg-muted"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+async function FiltersAndGrid({
+  searchParams,
+}: Pick<PageProps<"/products">, "searchParams">) {
+  const filters = parseProductFilters(await searchParams);
+  const choices = await getProductFormChoices();
+  return (
+    <>
+      <ProductFilterBar
+        filters={filters}
+        categories={choices.categories}
+        types={choices.types}
+        colours={choices.colours}
+      />
+      <Suspense fallback={<GridSkeleton />}>
+        <Grid filters={filters} />
+      </Suspense>
+    </>
+  );
+}
+
+async function Grid({ filters }: { filters: ProductFilters }) {
+  const products = await getProducts(filters);
   if (products.length === 0) {
+    const unfiltered =
+      !filters.categoryId &&
+      !filters.typeId &&
+      !filters.colourId &&
+      filters.status === "active";
     return (
       <p className="py-6 text-center text-muted-foreground">
-        No products yet.{" "}
-        <Link href="/products/new" className="underline">
-          Add the first one
-        </Link>
+        {unfiltered ? (
+          <>
+            No products yet.{" "}
+            <Link href="/products/new" className="underline">
+              Add the first one
+            </Link>
+          </>
+        ) : (
+          "No products match these filters."
+        )}
       </p>
     );
   }
   return (
-    <ul className="divide-y rounded-lg border">
+    <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
       {products.map((p) => (
         <li key={p.id}>
           <Link
             href={`/products/${p.id}`}
-            className="flex min-h-14 items-center gap-3 px-3 py-2 hover:bg-muted"
+            className="flex h-full flex-col overflow-hidden rounded-lg border hover:bg-muted"
           >
-            <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
+            <span className="relative flex aspect-square items-center justify-center bg-muted">
               {p.thumbnailUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element -- photos come from /api/photos, which needs the session cookie; the image optimiser fetches without it
                 <img
@@ -66,28 +123,25 @@ async function ProductList() {
                   )}
                 />
               ) : (
-                <Package className="size-5 text-muted-foreground" aria-hidden />
+                <Package className="size-8 text-muted-foreground" aria-hidden />
+              )}
+              {p.archived && (
+                <span className="absolute top-2 left-2 rounded bg-background/90 px-2 py-0.5 text-xs font-medium">
+                  Archived
+                </span>
               )}
             </span>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span
-                className={cn(
-                  "font-medium wrap-anywhere",
-                  p.archived && "text-muted-foreground",
-                )}
-              >
+            <span className="flex flex-1 flex-col gap-0.5 p-2.5">
+              <span className="text-sm font-medium wrap-anywhere">
                 {p.name}
               </span>
-              <span className="text-sm wrap-anywhere text-muted-foreground">
-                {[p.sku, p.category, p.colour].filter(Boolean).join(" · ")}
-                {p.archived && " · Archived"}
+              <span className="text-xs wrap-anywhere text-muted-foreground">
+                {p.sku}
+              </span>
+              <span className="mt-auto pt-1 text-sm font-semibold">
+                {formatMoney(p.price)}
               </span>
             </span>
-            <span className="text-sm font-medium">{formatMoney(p.price)}</span>
-            <ChevronRight
-              className="size-4 shrink-0 text-muted-foreground"
-              aria-hidden
-            />
           </Link>
         </li>
       ))}

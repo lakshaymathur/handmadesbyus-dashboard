@@ -11,8 +11,12 @@ import { db } from "@/db/client";
 import {
   categories,
   customisationOptionCategories,
+  customers,
   customisationOptions,
   listItems,
+  orderItems,
+  orders,
+  productionStages,
   productCustomisationOptions,
   productPhotos,
   products,
@@ -22,6 +26,7 @@ import { GET as servePhoto } from "@/app/api/photos/[id]/route";
 import { getStorage } from "@/lib/storage";
 import {
   createProduct,
+  deleteProduct,
   deleteProductPhoto,
   makeMainPhoto,
   setProductArchived,
@@ -471,5 +476,103 @@ describe("photos", () => {
     const key = put.mock.calls[0]?.[0] ?? "";
     put.mockRestore();
     expect(await getStorage().exists(key)).toBe(false);
+  });
+});
+
+describe("filtering", () => {
+  it("narrows by category, type, colour and status", async () => {
+    await add(); // Box, Square, Red
+    await add({
+      sku: "POUCH-1",
+      name: "Plain Pouch",
+      categoryId: ids.pouch,
+      typeId: "",
+      colourId: "",
+      optionIds: [],
+    });
+    const old = await add({ sku: "OLD-1", name: "Old Box" });
+    await setProductArchived({ id: old, archived: true });
+
+    const names = async (filters: Parameters<typeof getProducts>[0]) =>
+      (await getProducts(filters)).map((p) => p.name);
+    expect(await names({ status: "active" })).toEqual([
+      "Plain Pouch",
+      "Square Box – Red Floral",
+    ]);
+    expect(await names({ status: "archived" })).toEqual(["Old Box"]);
+    expect(await names({ status: "all", categoryId: ids.box })).toEqual([
+      "Square Box – Red Floral",
+      "Old Box",
+    ]);
+    expect(
+      await names({ status: "active", typeId: ids.square, colourId: ids.red }),
+    ).toEqual(["Square Box – Red Floral"]);
+    expect(await names({ status: "active", colourId: ids.floral })).toEqual([]);
+  });
+});
+
+describe("deleting", () => {
+  /** Puts the product on an order (the minimum the database needs). */
+  async function order(productId: string) {
+    const { userId } = await signInTestUser();
+    const by = { createdBy: userId, updatedBy: userId };
+    const [stage] = await db
+      .insert(productionStages)
+      .values({ categoryId: ids.box, name: "Not started", position: 0, ...by })
+      .returning();
+    const [customer] = await db
+      .insert(customers)
+      .values({ number: 1, firstName: "Asha", mobile: "9810000001", ...by })
+      .returning();
+    const [row] = await db
+      .insert(orders)
+      .values({
+        code: "HMU-2611-0001",
+        customerId: customer?.id ?? "",
+        orderDate: "2026-11-14",
+        promisedDate: "2026-11-20",
+        deliveryLine1: "1",
+        deliveryCity: "Jaipur",
+        deliveryState: "Rajasthan",
+        deliveryPin: "302001",
+        ...by,
+      })
+      .returning();
+    await db.insert(orderItems).values({
+      orderId: row?.id ?? "",
+      productId,
+      categoryId: ids.box,
+      productionStageId: stage?.id ?? "",
+      unitPrice: 120_000,
+      unitCost: 45_000,
+      ...by,
+    });
+  }
+
+  it("deletes a product never ordered, with its photos and their files", async () => {
+    const id = await add();
+    await uploadProductPhoto({
+      productId: id,
+      photo: new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], "a.jpg"),
+    });
+    const [photo] = await db.select().from(productPhotos);
+    expect((await getProduct(id))?.usedInOrders).toBe(false);
+    expect(await redirectTarget(deleteProduct({ id }))).toBe("/products");
+    expect(await db.$count(products)).toBe(0);
+    expect(await db.$count(productPhotos)).toBe(0);
+    expect(await db.$count(productCustomisationOptions)).toBe(0);
+    expect(await getStorage().exists(photo?.storageKey ?? "")).toBe(false);
+  });
+
+  it("refuses a product that's on an order: archive it instead", async () => {
+    const id = await add();
+    await order(id);
+    expect((await getProduct(id))?.usedInOrders).toBe(true);
+    expect(await deleteProduct({ id })).toEqual({
+      ok: false,
+      error:
+        "This product is on orders, so it can't be deleted. Archive it instead.",
+    });
+    expect(await db.$count(products)).toBe(1);
   });
 });

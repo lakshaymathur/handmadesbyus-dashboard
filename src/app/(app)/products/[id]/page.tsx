@@ -1,4 +1,4 @@
-import { Pencil } from "lucide-react";
+import { Copy, Pencil } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -8,6 +8,7 @@ import { ListSkeleton, PageHeader } from "@/components/page-header";
 import { PageSection } from "@/components/page-section";
 import { buttonVariants } from "@/components/ui/button";
 import { ArchiveButton } from "@/features/products/components/archive-button";
+import { DeleteProductButton } from "@/features/products/components/delete-product-button";
 import { PhotoManager } from "@/features/products/components/photo-manager";
 import { getProduct } from "@/features/products/queries";
 import { margin } from "@/features/products/schema";
@@ -128,6 +129,36 @@ async function Product({
         </p>
         <ArchiveButton productId={product.id} archived={product.archived} />
       </PageSection>
+
+      <PageSection title="Duplicate">
+        <p className="text-muted-foreground">
+          Start a new product from this one, e.g. the same box in another
+          colour.
+        </p>
+        <Link
+          href={`/products/new?from=${product.id}`}
+          className={buttonVariants({
+            variant: "outline",
+            className: "h-11 sm:w-fit",
+          })}
+        >
+          <Copy aria-hidden />
+          Duplicate
+        </Link>
+      </PageSection>
+
+      {!product.usedInOrders && (
+        <PageSection title="Delete">
+          <p className="text-muted-foreground">
+            Only for products that have never been ordered. Once a product is on
+            an order, archive it instead.
+          </p>
+          <DeleteProductButton
+            productId={product.id}
+            productName={product.name}
+          />
+        </PageSection>
+      )}
     </>
   );
 }

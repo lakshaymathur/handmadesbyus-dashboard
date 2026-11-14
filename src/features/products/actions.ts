@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import type { z } from "zod";
 import { db } from "@/db/client";
 import type { Executor } from "@/db/connect";
-import { uniqueViolation } from "@/db/errors";
+import { foreignKeyViolation, uniqueViolation } from "@/db/errors";
 import {
   categories,
   customisationOptionCategories,
@@ -21,6 +21,7 @@ import { getStorage, newKey } from "@/lib/storage";
 import {
   MAX_PHOTOS,
   photoIdSchema,
+  productIdSchema,
   productSchema,
   setArchivedSchema,
   updateProductSchema,
@@ -379,3 +380,32 @@ export const deleteProductPhoto = authedAction(
     refresh();
   },
 );
+
+/**
+ * Deletes a product that's never been on an order (§3.4), with its photos. A product on
+ * an order can only be archived: the database refuses the delete (order_items → products).
+ */
+export const deleteProduct = authedAction(productIdSchema, async ({ id }) => {
+  let keys: string[];
+  try {
+    keys = await db.transaction(async (tx) => {
+      await lockProduct(tx, id);
+      const photos = await tx
+        .select({ key: productPhotos.storageKey })
+        .from(productPhotos)
+        .where(eq(productPhotos.productId, id));
+      // Photos and offered options go with it (ON DELETE CASCADE).
+      await tx.delete(products).where(eq(products.id, id));
+      return photos.map((p) => p.key);
+    });
+  } catch (error) {
+    if (foreignKeyViolation(error) !== null) {
+      throw new ActionError(
+        "This product is on orders, so it can't be deleted. Archive it instead.",
+      );
+    }
+    throw error;
+  }
+  await Promise.all(keys.map(deleteStored));
+  redirect("/products");
+});
