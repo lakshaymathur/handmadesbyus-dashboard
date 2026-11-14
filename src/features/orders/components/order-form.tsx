@@ -14,17 +14,19 @@ import { Button } from "@/components/ui/button";
 import { AddressFields } from "@/features/customers/components/address-fields";
 import type { CustomerDetail } from "@/features/customers/queries";
 import type { CatalogueProduct } from "@/features/products/queries";
+import type { OrderItemDetail } from "../queries";
 import { validateThenRun } from "@/lib/client-action";
 import { formatMoney, parseMoney } from "@/lib/money";
 import { useActionForm } from "@/lib/use-action-form";
 import { cn } from "@/lib/utils";
-import { createOrder } from "../actions";
+import { createOrder, updateOrder } from "../actions";
 import { orderTotals, type Discount } from "../pricing";
 import {
   CHANNEL_LABELS,
   CHANNELS,
   discountOf,
   orderSchema,
+  updateOrderSchema,
   type OrderInput,
   type OrderItemInput,
 } from "../schema";
@@ -39,31 +41,104 @@ const CHANNEL_OPTIONS = [
 type Props = {
   catalogue: CatalogueProduct[];
   initial: OrderInput;
-  /** The customer already chosen (duplicating an order), if any. */
+  /** The customer already chosen (editing or duplicating an order), if any. */
   initialCustomer: CustomerDetail | null;
+  /** Editing: the order, and its items as saved (their snapshot prices). */
+  orderId?: string;
+  savedItems?: OrderItemDetail[];
 };
 
 type AddressKey = "line1" | "line2" | "landmark" | "city" | "state" | "pin";
 
 /** The order's price per unit of an item: its price plus its customisations' today. */
-function itemPricing(item: OrderItemInput, catalogue: CatalogueProduct[]) {
-  const product = catalogue.find((p) => p.id === item.productId);
+/** A saved customisation that the item still has unchanged (it keeps its snapshot). */
+function savedMatch(
+  saved: OrderItemDetail | undefined,
+  c: OrderItemInput["customisations"][number],
+) {
+  return saved?.customisations.find(
+    (s) =>
+      s.optionId === c.optionId &&
+      s.choiceId === (c.choiceId ?? null) &&
+      s.text === (c.text?.trim() || null),
+  );
+}
+
+/**
+ * The item's product as the form shows it: from the catalogue, plus (for a saved item)
+ * any customisations or choices it has that Settings has since retired, so editing the
+ * item keeps them.
+ */
+function productFor(
+  item: OrderItemInput,
+  catalogue: CatalogueProduct[],
+  savedItems: OrderItemDetail[],
+): CatalogueProduct | undefined {
+  const base = catalogue.find((p) => p.id === item.productId);
+  const saved = savedItems.find((s) => s.id === item.id);
+  if (!base || !saved) return base;
+  const options = [...base.options];
+  for (const c of saved.customisations) {
+    const index = options.findIndex((o) => o.id === c.optionId);
+    const choice =
+      c.choiceId && c.choiceName
+        ? [{ id: c.choiceId, name: c.choiceName }]
+        : [];
+    const option = options[index];
+    if (!option) {
+      options.push({
+        id: c.optionId,
+        name: c.name,
+        inputType: c.inputType,
+        maxLength: c.text?.length ?? null,
+        extraPrice: c.price,
+        choices: choice,
+      });
+    } else if (
+      c.choiceId &&
+      !option.choices.some((ch) => ch.id === c.choiceId)
+    ) {
+      options[index] = { ...option, choices: [...option.choices, ...choice] };
+    }
+  }
+  return { ...base, options };
+}
+
+/** Price per unit of an item: saved customisations at their saved price, others today's. */
+function itemPricing(
+  item: OrderItemInput,
+  catalogue: CatalogueProduct[],
+  savedItems: OrderItemDetail[],
+) {
+  const product = productFor(item, catalogue, savedItems);
+  const saved = savedItems.find((s) => s.id === item.id);
   return {
     quantity: Number(item.quantity),
     unitPrice: parseMoney(item.unitPrice) ?? 0,
     unitCost: 0,
     customisations: item.customisations.map((c) => ({
-      price: product?.options.find((o) => o.id === c.optionId)?.extraPrice ?? 0,
+      price:
+        savedMatch(saved, c)?.price ??
+        product?.options.find((o) => o.id === c.optionId)?.extraPrice ??
+        0,
       cost: 0,
     })),
   };
 }
 
 /** Create an order (§2.4, §3.2): customer, items, delivery and dates, price. */
-export function OrderForm({ catalogue, initial, initialCustomer }: Props) {
+export function OrderForm({
+  catalogue,
+  initial,
+  initialCustomer,
+  orderId,
+  savedItems = [],
+}: Props) {
   const idPrefix = useId();
   const form = useActionForm<OrderInput>(initial, (values) =>
-    validateThenRun(orderSchema, values, createOrder),
+    orderId
+      ? validateThenRun(updateOrderSchema, { ...values, orderId }, updateOrder)
+      : validateThenRun(orderSchema, values, createOrder),
   );
   const { values } = form;
   const [customer, setCustomer] = useState(initialCustomer);
@@ -111,7 +186,7 @@ export function OrderForm({ catalogue, initial, initialCustomer }: Props) {
   const discount: Discount = discountOf(values) ?? { type: "none" };
   const totals = orderTotals({
     items: values.items
-      .map((item) => itemPricing(item, catalogue))
+      .map((item) => itemPricing(item, catalogue, savedItems))
       .filter((i) => Number.isInteger(i.quantity) && i.quantity >= 1),
     discount,
     shippingCharged: parseMoney(values.shippingCharged) ?? 0,
@@ -155,8 +230,8 @@ export function OrderForm({ catalogue, initial, initialCustomer }: Props) {
           {values.items.length > 0 && (
             <ul className="flex flex-col divide-y rounded-lg border">
               {values.items.map((item, index) => {
-                const product = catalogue.find((p) => p.id === item.productId);
-                const pricing = itemPricing(item, catalogue);
+                const product = productFor(item, catalogue, savedItems);
+                const pricing = itemPricing(item, catalogue, savedItems);
                 const itemError =
                   form.error(`items.${index}.productId`) ??
                   form.error(`items.${index}.customisations`) ??
@@ -166,7 +241,9 @@ export function OrderForm({ catalogue, initial, initialCustomer }: Props) {
                   return (
                     <li key={index} className="p-2">
                       <ItemEditor
-                        catalogue={catalogue}
+                        catalogue={catalogue.map((p) =>
+                          p.id === item.productId && product ? product : p,
+                        )}
                         item={item}
                         onSave={saveItem}
                         onCancel={() => setEditing(null)}
@@ -409,7 +486,7 @@ export function OrderForm({ catalogue, initial, initialCustomer }: Props) {
           className="h-11"
           disabled={form.pending || editing !== null}
         >
-          {form.pending ? "Saving…" : "Create order"}
+          {form.pending ? "Saving…" : orderId ? "Save changes" : "Create order"}
         </Button>
         {editing !== null && (
           <p className="text-sm text-muted-foreground">

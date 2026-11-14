@@ -1,3 +1,4 @@
+import { Copy, Pencil } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -5,6 +6,7 @@ import { Suspense } from "react";
 import { z } from "zod";
 import { ListSkeleton, PageHeader } from "@/components/page-header";
 import { PageSection } from "@/components/page-section";
+import { buttonVariants } from "@/components/ui/button";
 import { formatAddress, formatMobile } from "@/features/customers/format";
 import { Thumbnail } from "@/features/orders/components/item-editor";
 import { StageControls } from "@/features/orders/components/stage-controls";
@@ -56,6 +58,31 @@ async function Order({ params }: Pick<PageProps<"/orders/[id]">, "params">) {
       <PageHeader
         title={order.code}
         back={{ href: "/orders", label: "Orders" }}
+        action={
+          <div className="flex gap-2">
+            <Link
+              href={`/orders/new?from=${order.id}`}
+              className={buttonVariants({
+                variant: "outline",
+                className: "h-11",
+              })}
+              aria-label="Duplicate order"
+            >
+              <Copy aria-hidden />
+              <span className="max-sm:sr-only">Duplicate</span>
+            </Link>
+            <Link
+              href={`/orders/${order.id}/edit`}
+              className={buttonVariants({
+                variant: "outline",
+                className: "h-11",
+              })}
+            >
+              <Pencil aria-hidden />
+              Edit
+            </Link>
+          </div>
+        }
       />
       <div className="-mt-4 flex flex-wrap items-center gap-2">
         <StatusBadge status={order.status} />

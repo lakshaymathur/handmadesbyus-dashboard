@@ -1,6 +1,6 @@
 "use server";
 
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
@@ -25,11 +25,13 @@ import {
 } from "@/db/schema";
 import { ActionError, authedAction } from "@/lib/auth/action";
 import { todayIST } from "@/lib/dates";
+import { stageChangeProblem } from "./lifecycle";
 import { orderTotals } from "./pricing";
 import {
   orderSchema,
   stageChangeSchema,
   statusChangeSchema,
+  updateOrderSchema,
   type OrderValues,
 } from "./schema";
 
@@ -60,10 +62,24 @@ export type PreparedItem = {
  * offered by that product with a fitting value. Errors are reported per item
  * ("items.2.customisations").
  */
+/** What an item already on the order keeps when the order is edited (its snapshots). */
+type SavedItem = {
+  categoryId: string;
+  unitCost: number;
+  customisations: PreparedItem["customisations"];
+};
+
 async function prepareItems(
   tx: Executor,
   items: ItemValues[],
-  allowArchived: ReadonlySet<string> = new Set(),
+  {
+    allowArchived = new Set<string>(),
+    saved = () => undefined,
+  }: {
+    allowArchived?: ReadonlySet<string>;
+    /** The saved item at this position in `items`, when editing an order. */
+    saved?: (index: number) => SavedItem | undefined;
+  } = {},
 ): Promise<PreparedItem[]> {
   const productIds = [...new Set(items.map((i) => i.productId))];
   const [productRows, offered] = await Promise.all([
@@ -140,9 +156,23 @@ async function prepareItems(
       );
       continue;
     }
+    const savedItem = saved(index);
     const seen = new Set<string>();
     const customisations: PreparedItem["customisations"] = [];
     for (const chosen of item.customisations) {
+      // Unchanged on an existing item: keep it as saved, even if Settings has since
+      // changed or retired the option (snapshots, CLAUDE.md).
+      const kept = savedItem?.customisations.find(
+        (c) =>
+          c.optionId === chosen.optionId &&
+          c.choiceId === (chosen.choiceId ?? null) &&
+          c.textValue === (chosen.text?.trim() || null),
+      );
+      if (kept && !seen.has(kept.optionId)) {
+        seen.add(kept.optionId);
+        customisations.push(kept);
+        continue;
+      }
       const option = offered.find(
         (o) => o.productId === product.id && o.optionId === chosen.optionId,
       );
@@ -194,8 +224,9 @@ async function prepareItems(
     }
     prepared.push({
       input: item,
-      categoryId: product.categoryId,
-      unitCost: product.cost,
+      // An existing item keeps its own category (its stage belongs to it) and cost.
+      categoryId: savedItem?.categoryId ?? product.categoryId,
+      unitCost: savedItem?.unitCost ?? product.cost,
       firstStageId: firstStage.id,
       customisations,
     });
@@ -370,5 +401,175 @@ export const changeStatus = authedAction(
       ),
     );
     refresh();
+  },
+);
+
+/**
+ * Saves changes to an order (§3.2: edit any field, add/remove/edit items). The code and
+ * status don't change here. Existing items keep their unit cost, category, stage and
+ * unchanged customisation snapshots; new items and new customisations take today's
+ * prices. Items can only be added while the order is In production or On hold (a new
+ * item starts at its first stage).
+ */
+export const updateOrder = authedAction(
+  updateOrderSchema,
+  async ({ orderId, ...order }, { audit }) => {
+    await db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({ status: orders.status })
+        .from(orders)
+        .where(eq(orders.id, orderId))
+        .for("update");
+      if (!current) {
+        throw new ActionError("That order no longer exists. Reload the page.");
+      }
+      const [customer] = await tx
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.id, order.customerId));
+      if (!customer) {
+        throw new ActionError("That customer no longer exists.", {
+          customerId: ["Choose the customer again"],
+        });
+      }
+
+      const savedRows = await tx
+        .select({
+          id: orderItems.id,
+          productId: orderItems.productId,
+          categoryId: orderItems.categoryId,
+          unitCost: orderItems.unitCost,
+        })
+        .from(orderItems)
+        .where(eq(orderItems.orderId, orderId));
+      const savedExtras =
+        savedRows.length === 0
+          ? []
+          : await tx
+              .select({
+                itemId: orderItemCustomisations.orderItemId,
+                optionId: orderItemCustomisations.optionId,
+                choiceId: orderItemCustomisations.choiceId,
+                textValue: orderItemCustomisations.textValue,
+                price: orderItemCustomisations.price,
+                cost: orderItemCustomisations.cost,
+              })
+              .from(orderItemCustomisations)
+              .where(
+                inArray(
+                  orderItemCustomisations.orderItemId,
+                  savedRows.map((r) => r.id),
+                ),
+              );
+
+      // Items that say they're saved must be this order's, with the same product.
+      for (const [index, item] of order.items.entries()) {
+        if (!item.id) continue;
+        const saved = savedRows.find((r) => r.id === item.id);
+        if (!saved || saved.productId !== item.productId) {
+          throw new ActionError(
+            "This order changed meanwhile. Reload the page.",
+            {
+              [`items.${index}.productId`]: ["Reload the page and try again"],
+            },
+          );
+        }
+      }
+      if (
+        order.items.some((i) => !i.id) &&
+        stageChangeProblem(current.status) !== null
+      ) {
+        throw new ActionError(
+          "Items can only be added while the order is In production or On hold. Move it back first.",
+          { items: ["Move the order back to In production to add items"] },
+        );
+      }
+
+      const items = await prepareItems(tx, order.items, {
+        allowArchived: new Set(savedRows.map((r) => r.productId)),
+        saved: (index) => {
+          const id = order.items[index]?.id;
+          const row = savedRows.find((r) => r.id === id);
+          return row
+            ? {
+                categoryId: row.categoryId,
+                unitCost: row.unitCost,
+                customisations: savedExtras
+                  .filter((e) => e.itemId === row.id)
+                  .map(({ itemId: _item, ...e }) => e),
+              }
+            : undefined;
+        },
+      });
+      checkDiscount(order, items);
+
+      await tx
+        .update(orders)
+        .set({ ...orderColumns(order), ...audit.update })
+        .where(eq(orders.id, orderId));
+
+      // Remove items no longer on the order (their history keeps the order).
+      const keptIds = order.items.flatMap((i) => (i.id ? [i.id] : []));
+      await tx
+        .delete(orderItems)
+        .where(
+          and(
+            eq(orderItems.orderId, orderId),
+            keptIds.length > 0 ? notInArray(orderItems.id, keptIds) : undefined,
+          ),
+        );
+
+      const added: { prepared: PreparedItem; position: number }[] = [];
+      for (const [position, prepared] of items.entries()) {
+        const id = prepared.input.id;
+        if (!id) {
+          added.push({ prepared, position });
+          continue;
+        }
+        await tx
+          .update(orderItems)
+          .set({
+            quantity: prepared.input.quantity,
+            unitPrice: prepared.input.unitPrice,
+            notes: prepared.input.notes,
+            position,
+            ...audit.update,
+          })
+          .where(eq(orderItems.id, id));
+        // Customisations: keep unchanged rows as they are; replace the rest.
+        const unchanged = prepared.customisations.filter((c) =>
+          savedExtras.some(
+            (e) =>
+              e.itemId === id &&
+              e.optionId === c.optionId &&
+              e.choiceId === c.choiceId &&
+              e.textValue === c.textValue,
+          ),
+        );
+        await tx.delete(orderItemCustomisations).where(
+          and(
+            eq(orderItemCustomisations.orderItemId, id),
+            unchanged.length > 0
+              ? notInArray(
+                  orderItemCustomisations.optionId,
+                  unchanged.map((c) => c.optionId),
+                )
+              : undefined,
+          ),
+        );
+        const changed = prepared.customisations.filter(
+          (c) => !unchanged.includes(c),
+        );
+        if (changed.length > 0) {
+          await tx
+            .insert(orderItemCustomisations)
+            .values(
+              changed.map((c) => ({ orderItemId: id, ...c, ...audit.create })),
+            );
+        }
+      }
+      await insertItems(tx, orderId, added, audit.create);
+    });
+    redirect(`/orders/${orderId}`);
   },
 );

@@ -190,3 +190,8 @@ export const statusChangeSchema = z
   });
 
 export type StatusChangeFormInput = z.input<typeof statusChangeSchema>;
+
+/** Editing an order: the same form, for an existing order. */
+export const updateOrderSchema = z
+  .object({ orderId: z.uuid() })
+  .and(orderSchema);

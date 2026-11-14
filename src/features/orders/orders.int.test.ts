@@ -26,9 +26,16 @@ import {
   findCustomers,
   getCustomerForPicker,
 } from "@/features/customers/actions";
-import { changeItemStages, changeStatus, createOrder } from "./actions";
+import {
+  changeItemStages,
+  changeStatus,
+  createOrder,
+  updateOrder,
+} from "./actions";
 import { getOrder, getOrders } from "./queries";
+import { getOrderCatalogue } from "@/features/products/queries";
 import type { OrderInput, OrderItemInput } from "./schema";
+import { duplicateToInput, orderToInput } from "./to-input";
 
 /** Where an action redirected to (it throws Next's redirect). */
 async function redirectTarget(action: Promise<unknown>): Promise<string> {
@@ -507,5 +514,191 @@ describe("moving an order along", () => {
       cancelReason: "Wrong colour",
       refundOwed: true,
     });
+  });
+});
+
+describe("editing an order", () => {
+  async function edit(id: string, change: (input: OrderInput) => OrderInput) {
+    const saved = await getOrder(id);
+    if (!saved) throw new Error("no order");
+    return updateOrder({ ...change(orderToInput(saved)), orderId: id });
+  }
+
+  it("keeps saved prices, costs and customisations; new ones take today's", async () => {
+    const id = await create();
+    // The catalogue changes after the order was placed.
+    await db
+      .update(products)
+      .set({ price: 999_900, cost: 99_900 })
+      .where(eq(products.id, ids.squareBox));
+    await db.update(customisationOptions).set({ extraPrice: 77_700 });
+    await redirectTarget(
+      edit(id, (input) => ({
+        ...input,
+        items: input.items.map((item, i) =>
+          i === 0
+            ? {
+                ...item,
+                quantity: "3",
+                // Latkan unchanged; sticker text changed → priced today.
+                customisations: item.customisations.map((c) =>
+                  c.optionId === ids.sticker
+                    ? { ...c, text: "Shubh Vivah" }
+                    : c,
+                ),
+              }
+            : item,
+        ),
+      })),
+    );
+    const box = (await getOrder(id))?.items[0];
+    expect(box).toMatchObject({
+      quantity: 3,
+      unitPrice: 120_000,
+      unitCost: 45_000, // not today's 99,900
+      customisations: [
+        { name: "Latkan", choiceName: "Gold", price: 5_000 }, // kept
+        { name: "Sticker", text: "Shubh Vivah", price: 77_700 }, // changed: today's
+      ],
+    });
+  });
+
+  it("adds and removes items; history of a removed item stays with the order", async () => {
+    const id = await create();
+    const pouch = (await getOrder(id))?.items[1];
+    await changeItemStages({
+      orderId: id,
+      items: [{ itemId: pouch?.id ?? "", stageId: pouch?.stages[1]?.id ?? "" }],
+    });
+    await redirectTarget(
+      edit(id, (input) => ({
+        ...input,
+        items: [
+          input.items[0] as OrderItemInput,
+          {
+            productId: ids.squareBox,
+            quantity: "1",
+            unitPrice: "999",
+            notes: "",
+            customisations: [],
+          },
+        ],
+      })),
+    );
+    const saved = await getOrder(id);
+    expect(
+      saved?.items.map((i) => [i.productName, i.unitPrice, i.stage.name]),
+    ).toEqual([
+      ["Square Box – Red Floral", 120_000, "Not started"],
+      ["Square Box – Red Floral", 99_900, "Not started"],
+    ]);
+    expect(saved?.history.find((h) => h.toStage)).toMatchObject({
+      itemName: null, // the pouch is gone, its stage move is still in the history
+      toStage: "Stitched",
+    });
+  });
+
+  it("only adds items while the order is in production or on hold", async () => {
+    const id = await create({ items: [boxItem({ customisations: [] })] });
+    const item = (await getOrder(id))?.items[0];
+    await changeItemStages({
+      orderId: id,
+      items: [
+        { itemId: item?.id ?? "", stageId: item?.stages.at(-1)?.id ?? "" },
+      ],
+    });
+    await changeStatus({
+      orderId: id,
+      to: "ready_for_pickup",
+      note: "",
+      deliveredDate: "",
+      cancelReason: "",
+      refundOwed: false,
+    });
+    expect(
+      await edit(id, (input) => ({
+        ...input,
+        items: [...input.items, boxItem({ customisations: [] })],
+      })),
+    ).toMatchObject({ ok: false, fieldErrors: { items: expect.any(Array) } });
+    // Other edits are fine.
+    await redirectTarget(
+      edit(id, (input) => ({ ...input, priority: "normal" })),
+    );
+    expect((await getOrder(id))?.priority).toBe("normal");
+  });
+
+  it("keeps a customisation Settings has since retired, but won't add it anew", async () => {
+    const id = await create();
+    await db
+      .update(customisationOptions)
+      .set({ active: false })
+      .where(eq(customisationOptions.id, ids.latkan));
+    await redirectTarget(
+      edit(id, (input) => ({ ...input, notes: "Gift wrap" })),
+    );
+    expect(
+      (await getOrder(id))?.items[0]?.customisations.map((c) => c.name),
+    ).toEqual(["Latkan", "Sticker"]);
+    expect(
+      await edit(id, (input) => ({
+        ...input,
+        items: [...input.items, boxItem()],
+      })),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: { "items.2.customisations": expect.any(Array) },
+    });
+  });
+
+  it("refuses items that aren't this order's", async () => {
+    const id = await create();
+    const other = await create();
+    const foreign = (await getOrder(other))?.items[0]?.id;
+    expect(
+      await edit(id, (input) => ({
+        ...input,
+        items: [{ ...(input.items[0] as OrderItemInput), id: foreign }],
+      })),
+    ).toMatchObject({
+      ok: false,
+      error: "This order changed meanwhile. Reload the page.",
+    });
+  });
+});
+
+describe("duplicating an order", () => {
+  it("copies customer, address and items at today's prices, skipping what's gone", async () => {
+    const id = await create();
+    await db
+      .update(products)
+      .set({ price: 130_000 })
+      .where(eq(products.id, ids.squareBox));
+    await db
+      .update(products)
+      .set({ archivedAt: new Date() })
+      .where(eq(products.id, ids.pouch));
+    const original = await getOrder(id);
+    if (!original) throw new Error("no order");
+    const { input, skipped } = duplicateToInput(
+      original,
+      await getOrderCatalogue(),
+      "2026-12-01",
+    );
+    expect(skipped).toEqual(["Potli Pouch – Emerald"]);
+    expect(input).toMatchObject({
+      customerId: ids.customer,
+      city: "Jaipur",
+      orderDate: "2026-12-01",
+      promisedDate: "",
+      discountType: "none",
+      items: [{ productId: ids.squareBox, quantity: "2", unitPrice: "1300" }],
+    });
+    expect(input.items[0]?.customisations).toHaveLength(2);
+    const copy = await redirectTarget(
+      createOrder({ ...input, promisedDate: "2026-12-10" }),
+    );
+    expect(copy).toMatch(/^\/orders\//);
+    expect((await getOrders()).map((o) => o.code)).toContain("HMU-2612-0001");
   });
 });
