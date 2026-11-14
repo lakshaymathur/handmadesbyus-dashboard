@@ -1,4 +1,4 @@
-import { AtSign, Mail, Pencil, Phone, Plus } from "lucide-react";
+import { AtSign, ChevronRight, Mail, Pencil, Phone, Plus } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -11,7 +11,10 @@ import { AddressButtons } from "@/features/customers/components/address-form";
 import { formatAddress, formatMobile } from "@/features/customers/format";
 import { getCustomer } from "@/features/customers/queries";
 import { SOURCE_LABELS } from "@/features/customers/schema";
-import { formatDate } from "@/lib/dates";
+import { StatusBadge } from "@/features/orders/components/status-badge";
+import { getCustomerOrders } from "@/features/orders/queries";
+import { formatDate, formatDateOnly } from "@/lib/dates";
+import { formatMoney } from "@/lib/money";
 
 export const metadata: Metadata = { title: "Customer · HandMadesByUs" };
 
@@ -34,7 +37,10 @@ async function Customer({
 }: Pick<PageProps<"/customers/[id]">, "params">) {
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  const customer = await getCustomer(id);
+  const [customer, { orders, stats }] = await Promise.all([
+    getCustomer(id),
+    getCustomerOrders(id),
+  ]);
   if (!customer) notFound();
 
   const details = [
@@ -145,9 +151,60 @@ async function Customer({
       </PageSection>
 
       <PageSection title="Orders">
-        <p className="text-muted-foreground">
-          Order history, lifetime spend and balance due arrive with orders (M4).
-        </p>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+          <dt className="text-muted-foreground">Orders</dt>
+          <dd>
+            {stats.orders}
+            {stats.open > 0 && ` (${stats.open} open)`}
+          </dd>
+          <dt className="text-muted-foreground">Lifetime spend</dt>
+          <dd>
+            {formatMoney(stats.lifetimeSpend)}
+            <span className="text-sm text-muted-foreground"> delivered</span>
+          </dd>
+          <dt className="text-muted-foreground">Last order</dt>
+          <dd>
+            {stats.lastOrderDate ? formatDateOnly(stats.lastOrderDate) : "—"}
+          </dd>
+          <dt className="text-muted-foreground">Balance due</dt>
+          <dd className="text-muted-foreground">With payments (M6)</dd>
+        </dl>
+        {orders.length > 0 && (
+          <ul className="divide-y rounded-lg border">
+            {orders.map((o) => (
+              <li key={o.id}>
+                <Link
+                  href={`/orders/${o.id}`}
+                  className="flex min-h-14 items-center gap-3 px-3 py-2 hover:bg-muted"
+                >
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{o.code}</span>
+                      <StatusBadge status={o.status} />
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      Ordered {formatDateOnly(o.orderDate)}
+                    </span>
+                  </span>
+                  <span className="text-sm font-medium">
+                    {formatMoney(o.total)}
+                  </span>
+                  <ChevronRight
+                    className="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden
+                  />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Link
+          href={`/orders/new?customer=${customer.id}`}
+          className={buttonVariants({ className: "h-11 sm:w-fit" })}
+        >
+          <Plus aria-hidden />
+          New order for {customer.firstName}
+        </Link>
       </PageSection>
     </>
   );

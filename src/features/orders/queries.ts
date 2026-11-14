@@ -19,6 +19,7 @@ import { formatCustomerId } from "@/lib/ids";
 import { customerName } from "@/features/customers/format";
 import { lastStage, type OrderStatus, type Stage } from "./lifecycle";
 import { orderTotals, type Discount, type OrderTotals } from "./pricing";
+import { customerOrderStats, type CustomerOrderStats } from "./stats";
 
 const photoUrl = (photoId: string) => `/api/photos/${photoId}`;
 
@@ -106,7 +107,12 @@ const likeEscape = (text: string) => text.replace(/[\\%_]/g, (c) => `\\${c}`);
  * Orders matching `query` (order code, or the customer's name or mobile), newest first,
  * at most ORDER_LIST_LIMIT. M5's dashboard replaces this list.
  */
-export async function getOrders(query = ""): Promise<OrderSummary[]> {
+export async function getOrders(
+  query = "",
+  customerId?: string,
+  /** At most this many; null for all (a customer's own orders, for their totals). */
+  limit: number | null = ORDER_LIST_LIMIT,
+): Promise<OrderSummary[]> {
   await requireUser();
   const q = query.trim();
   const pattern = `%${likeEscape(q)}%`;
@@ -129,22 +135,25 @@ export async function getOrders(query = ""): Promise<OrderSummary[]> {
     .from(orders)
     .innerJoin(customers, eq(customers.id, orders.customerId))
     .where(
-      q === ""
-        ? undefined
-        : or(
-            ilike(orders.code, pattern),
-            ilike(
-              sql`${customers.firstName} || ' ' || coalesce(${customers.lastName}, '')`,
-              pattern,
+      and(
+        customerId ? eq(orders.customerId, customerId) : undefined,
+        q === ""
+          ? undefined
+          : or(
+              ilike(orders.code, pattern),
+              ilike(
+                sql`${customers.firstName} || ' ' || coalesce(${customers.lastName}, '')`,
+                pattern,
+              ),
+              ilike(
+                customers.mobile,
+                `%${likeEscape(q.replace(/\D/g, "") || q)}%`,
+              ),
             ),
-            ilike(
-              customers.mobile,
-              `%${likeEscape(q.replace(/\D/g, "") || q)}%`,
-            ),
-          ),
+      ),
     )
     .orderBy(desc(orders.orderDate), desc(orders.code))
-    .limit(ORDER_LIST_LIMIT);
+    .limit(limit ?? Number.MAX_SAFE_INTEGER);
   const totals = await totalsFor(rows);
   return rows.map((row) => ({
     id: row.id,
@@ -411,4 +420,12 @@ export async function getOrder(id: string): Promise<OrderDetail | null> {
     }),
     history,
   };
+}
+
+/** A customer's orders (newest first) and their totals, for the customer page. */
+export async function getCustomerOrders(
+  customerId: string,
+): Promise<{ orders: OrderSummary[]; stats: CustomerOrderStats }> {
+  const list = await getOrders("", customerId, null);
+  return { orders: list, stats: customerOrderStats(list) };
 }

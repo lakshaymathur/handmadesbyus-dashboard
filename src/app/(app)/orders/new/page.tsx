@@ -28,12 +28,18 @@ export default function NewOrderPage({
 async function NewOrder({
   searchParams,
 }: Pick<PageProps<"/orders/new">, "searchParams">) {
-  const { from } = await searchParams;
-  const fromId =
-    typeof from === "string" && z.uuid().safeParse(from).success ? from : null;
-  const [catalogue, original] = await Promise.all([
+  const { from, customer: forCustomer } = await searchParams;
+  const asId = (value: unknown) =>
+    typeof value === "string" && z.uuid().safeParse(value).success
+      ? value
+      : null;
+  const fromId = asId(from);
+  const customerId = asId(forCustomer);
+  const [catalogue, original, chosenCustomer] = await Promise.all([
     getOrderCatalogue(),
     fromId ? getOrder(fromId) : null,
+    // ?customer=<id>: "New order" from a customer's page.
+    !fromId && customerId ? getCustomer(customerId) : null,
   ]);
   // Today in India, decided on the server (the phone's clock and zone may differ).
   const today = todayIST();
@@ -63,18 +69,19 @@ async function NewOrder({
     );
   }
 
+  const address = chosenCustomer?.addresses[0]; // the default comes first
   const initial: OrderInput = {
-    customerId: "",
+    customerId: chosenCustomer?.id ?? "",
     orderDate: today,
     promisedDate: "",
     priority: "normal",
     channel: "instagram",
-    line1: "",
-    line2: "",
-    landmark: "",
-    city: "",
-    state: "" as OrderInput["state"],
-    pin: "",
+    line1: address?.line1 ?? "",
+    line2: address?.line2 ?? "",
+    landmark: address?.landmark ?? "",
+    city: address?.city ?? "",
+    state: (address?.state ?? "") as OrderInput["state"],
+    pin: address?.pin ?? "",
     discountType: "none",
     discountValue: "",
     shippingCharged: "0",
@@ -90,7 +97,7 @@ async function NewOrder({
       <OrderForm
         catalogue={catalogue}
         initial={initial}
-        initialCustomer={null}
+        initialCustomer={chosenCustomer}
       />
     </>
   );

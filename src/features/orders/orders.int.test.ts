@@ -32,7 +32,7 @@ import {
   createOrder,
   updateOrder,
 } from "./actions";
-import { getOrder, getOrders } from "./queries";
+import { getCustomerOrders, getOrder, getOrders } from "./queries";
 import { getOrderCatalogue } from "@/features/products/queries";
 import type { OrderInput, OrderItemInput } from "./schema";
 import { duplicateToInput, orderToInput } from "./to-input";
@@ -700,5 +700,59 @@ describe("duplicating an order", () => {
     );
     expect(copy).toMatch(/^\/orders\//);
     expect((await getOrders()).map((o) => o.code)).toContain("HMU-2612-0001");
+  });
+});
+
+describe("a customer's orders", () => {
+  it("lists them newest first with order count, delivered spend and last order", async () => {
+    const delivered = await create({
+      orderDate: "2026-11-01",
+      promisedDate: "2026-11-05",
+    });
+    const items = (await getOrder(delivered))?.items ?? [];
+    await changeItemStages({
+      orderId: delivered,
+      items: items.map((i) => ({
+        itemId: i.id,
+        stageId: i.stages.at(-1)?.id ?? "",
+      })),
+    });
+    const change = {
+      note: "",
+      deliveredDate: "2026-11-06",
+      cancelReason: "",
+      refundOwed: false,
+    };
+    await changeStatus({ ...change, orderId: delivered, to: "delivered" });
+    await create({ orderDate: "2026-11-10", promisedDate: "2026-11-20" }); // open
+    const cancelled = await create({
+      orderDate: "2026-11-12",
+      promisedDate: "2026-11-20",
+    });
+    await changeStatus({
+      ...change,
+      orderId: cancelled,
+      to: "cancelled",
+      cancelReason: "Duplicate",
+    });
+
+    const { orders: list, stats } = await getCustomerOrders(ids.customer);
+    expect(list.map((o) => [o.orderDate, o.status])).toEqual([
+      ["2026-11-12", "cancelled"],
+      ["2026-11-10", "in_production"],
+      ["2026-11-01", "delivered"],
+    ]);
+    expect(stats).toEqual({
+      orders: 2,
+      open: 1,
+      lifetimeSpend: (await getOrder(delivered))?.totals.total,
+      lastOrderDate: "2026-11-10",
+    });
+    // Another customer's orders aren't included.
+    const rohit = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(eq(customers.mobile, "9820000002"));
+    expect((await getCustomerOrders(rohit[0]?.id ?? "")).orders).toEqual([]);
   });
 });
