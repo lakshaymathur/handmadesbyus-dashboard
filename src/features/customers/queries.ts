@@ -4,7 +4,7 @@ import { customerAddresses, customers } from "@/db/schema";
 import { requireUser } from "@/lib/auth/session";
 import { formatCustomerId, parseCustomerId } from "@/lib/ids";
 import { customerName } from "./format";
-import { normalizeInstagramHandle, normalizeMobile } from "./schema";
+import { mobileSearchDigits, normalizeInstagramHandle } from "./schema";
 import type { CustomerSource } from "./schema";
 
 /** How many customers the list shows at once; search narrows it down. */
@@ -36,7 +36,7 @@ export function customerSearchCondition(query: string): SQL | undefined {
   if (number !== null) return eq(customers.number, number);
 
   if (/^[\d\s+()-]+$/.test(q)) {
-    const digits = normalizeMobile(q);
+    const digits = mobileSearchDigits(q);
     if (digits.length >= 3) {
       const pattern = `%${likeEscape(digits)}%`;
       return or(
@@ -56,7 +56,7 @@ export function customerSearchCondition(query: string): SQL | undefined {
         (word) => sql`${fullName} LIKE ${`%${likeEscape(word)}%`} ESCAPE '\\'`,
       ),
     ),
-    handle === ""
+    !handle // empty, or a post link: nothing to match
       ? undefined
       : ilike(customers.instagramHandle, `%${likeEscape(handle)}%`),
   );
@@ -115,6 +115,42 @@ export type CustomerAddress = {
   isDefault: boolean;
 };
 
+const addressColumns = {
+  id: customerAddresses.id,
+  line1: customerAddresses.line1,
+  line2: customerAddresses.line2,
+  landmark: customerAddresses.landmark,
+  city: customerAddresses.city,
+  state: customerAddresses.state,
+  pin: customerAddresses.pin,
+  isDefault: customerAddresses.isDefault,
+};
+
+export type CustomerHeading = { id: string; code: string; name: string };
+
+/** A customer's code and name (for page titles), or null if there's no such customer. */
+export async function getCustomerHeading(
+  id: string,
+): Promise<CustomerHeading | null> {
+  await requireUser();
+  const [row] = await db
+    .select({
+      id: customers.id,
+      number: customers.number,
+      firstName: customers.firstName,
+      lastName: customers.lastName,
+    })
+    .from(customers)
+    .where(eq(customers.id, id));
+  return row
+    ? {
+        id: row.id,
+        code: formatCustomerId(row.number),
+        name: customerName(row),
+      }
+    : null;
+}
+
 export type CustomerDetail = {
   id: string;
   code: string;
@@ -134,27 +170,19 @@ export type CustomerDetail = {
 /** One customer with their addresses (default first), or null if there's no such customer. */
 export async function getCustomer(id: string): Promise<CustomerDetail | null> {
   await requireUser();
-  const customer = await db.query.customers.findFirst({
-    where: eq(customers.id, id),
-  });
+  // Independent reads: run them together (addresses of a missing customer are just []).
+  const [customer, addresses] = await Promise.all([
+    db.query.customers.findFirst({ where: eq(customers.id, id) }),
+    db
+      .select(addressColumns)
+      .from(customerAddresses)
+      .where(eq(customerAddresses.customerId, id))
+      .orderBy(
+        desc(customerAddresses.isDefault),
+        asc(customerAddresses.createdAt),
+      ),
+  ]);
   if (!customer) return null;
-  const addresses = await db
-    .select({
-      id: customerAddresses.id,
-      line1: customerAddresses.line1,
-      line2: customerAddresses.line2,
-      landmark: customerAddresses.landmark,
-      city: customerAddresses.city,
-      state: customerAddresses.state,
-      pin: customerAddresses.pin,
-      isDefault: customerAddresses.isDefault,
-    })
-    .from(customerAddresses)
-    .where(eq(customerAddresses.customerId, id))
-    .orderBy(
-      desc(customerAddresses.isDefault),
-      asc(customerAddresses.createdAt),
-    );
   return {
     id: customer.id,
     code: formatCustomerId(customer.number),
@@ -182,14 +210,7 @@ export async function getAddress(id: string): Promise<AddressDetail | null> {
   await requireUser();
   const [row] = await db
     .select({
-      id: customerAddresses.id,
-      line1: customerAddresses.line1,
-      line2: customerAddresses.line2,
-      landmark: customerAddresses.landmark,
-      city: customerAddresses.city,
-      state: customerAddresses.state,
-      pin: customerAddresses.pin,
-      isDefault: customerAddresses.isDefault,
+      ...addressColumns,
       customerId: customers.id,
       firstName: customers.firstName,
       lastName: customers.lastName,

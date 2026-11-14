@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import { PageSection } from "@/components/page-section";
 import { Suspense } from "react";
 import {
   ListSkeleton,
@@ -28,21 +29,6 @@ export default function UserPage({
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-3 border-t pt-6">
-      <h2 className="font-heading text-lg font-semibold">{title}</h2>
-      {children}
-    </div>
-  );
-}
-
 async function User({
   params,
 }: Pick<PageProps<"/settings/users/[id]">, "params">) {
@@ -59,15 +45,15 @@ async function User({
       />
       <RenameUserForm userId={user.id} name={user.name} />
       {user.isYou ? (
-        <Section title="Change password">
+        <PageSection title="Change password">
           <ChangeOwnPasswordForm />
-        </Section>
+        </PageSection>
       ) : (
         <>
-          <Section title="Reset password">
+          <PageSection title="Reset password">
             <ResetPasswordForm userId={user.id} />
-          </Section>
-          <Section title={user.active ? "Deactivate" : "Reactivate"}>
+          </PageSection>
+          <PageSection title={user.active ? "Deactivate" : "Reactivate"}>
             <p className="text-muted-foreground">
               {user.active
                 ? "Deactivated users are signed out and can't sign in. Their past work keeps their name."
@@ -78,7 +64,7 @@ async function User({
               name={user.name}
               active={user.active}
             />
-          </Section>
+          </PageSection>
         </>
       )}
     </>

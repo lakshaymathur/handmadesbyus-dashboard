@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { customerSource } from "@/db/schema";
 import { INDIAN_STATES } from "@/lib/indian-states";
+import type { Same } from "@/lib/types";
 import { nameSchema } from "@/lib/validation";
 
 // Zod schemas for the customer forms (§2.1), shared by the client forms and the actions.
@@ -17,17 +18,49 @@ export function normalizeMobile(text: string): string {
   return digits;
 }
 
+/** First path parts of instagram.com links that aren't profiles (posts, reels, …). */
+const NOT_PROFILE_PATHS = new Set([
+  "p",
+  "reel",
+  "reels",
+  "tv",
+  "explore",
+  "accounts",
+  "direct",
+  "about",
+  "legal",
+]);
+
 /**
  * Reduces "@Ananya.Creates", "ananya.creates" or a profile link
  * ("https://www.instagram.com/ananya.creates/?hl=en") to the stored form: lower case,
- * no "@". Instagram handles are case-insensitive.
+ * no "@". Instagram handles are case-insensitive. A story link gives the poster's
+ * handle. Returns null for a link that isn't to a profile (a post or reel): it doesn't
+ * say whose it is.
  */
-export function normalizeInstagramHandle(text: string): string {
+export function normalizeInstagramHandle(text: string): string | null {
   const trimmed = text.trim();
-  const link = /^(?:https?:\/\/)?(?:www\.)?instagram\.com\/([^/?#\s]+)/i.exec(
-    trimmed,
-  );
-  return (link?.[1] ?? trimmed).replace(/^@/, "").toLowerCase();
+  const link =
+    /^(?:https?:\/\/)?(?:www\.|m\.)?instagram\.com\/([^?#\s]*)/i.exec(trimmed);
+  if (!link) return trimmed.replace(/^@/, "").toLowerCase();
+  const [first = "", second = ""] = (link[1] ?? "").toLowerCase().split("/");
+  if (first === "stories") return second || null;
+  if (first === "" || NOT_PROFILE_PATHS.has(first)) return null;
+  return first;
+}
+
+/**
+ * The digits to look for when a search looks like (part of) a mobile number: a leading
+ * +91, 91 followed by a space or dash, or 0 is a prefix, not part of the number.
+ * "+91 98100" → "98100".
+ */
+export function mobileSearchDigits(query: string): string {
+  const q = query.trim();
+  const digits = q.replace(/\D/g, "");
+  if (/^(\+91|91[\s-])/.test(q)) return digits.slice(2);
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  if (q.startsWith("0")) return digits.slice(1);
+  return digits;
 }
 
 /** Trimmed text, or null when left empty. */
@@ -57,8 +90,17 @@ const optionalMobile = z
 
 export const instagramHandleSchema = z
   .string()
-  .transform(normalizeInstagramHandle)
-  .transform((s) => (s === "" ? null : s))
+  .transform((text, ctx) => {
+    const handle = normalizeInstagramHandle(text);
+    if (handle === null) {
+      ctx.addIssue({
+        code: "custom",
+        message: "That's a link to a post. Paste their profile link or handle",
+      });
+      return z.NEVER;
+    }
+    return handle === "" ? null : handle;
+  })
   .pipe(
     z
       .string()
@@ -82,9 +124,29 @@ export const CUSTOMER_SOURCES = [
   "exhibition",
   "website",
   "other",
-] as const satisfies readonly (typeof customerSource.enumValues)[number][];
+] as const;
 
 export type CustomerSource = (typeof CUSTOMER_SOURCES)[number];
+
+// Fails to compile if this list and the customer_source enum drift apart.
+const sourcesMatch: Same<
+  CustomerSource,
+  (typeof customerSource.enumValues)[number]
+> = true;
+void sourcesMatch;
+
+/**
+ * The source select: required when adding. "" (the "Not recorded" placeholder) only
+ * appears when editing a customer saved without one, and saving keeps it unset.
+ */
+const sourceInput = z.enum(
+  [...CUSTOMER_SOURCES, ""],
+  "Choose where they came from",
+);
+const requiredSource = sourceInput.pipe(
+  z.enum(CUSTOMER_SOURCES, "Choose where they came from"),
+);
+const optionalSource = sourceInput.transform((v) => (v === "" ? null : v));
 
 export const SOURCE_LABELS: Record<CustomerSource, string> = {
   instagram: "Instagram",
@@ -101,7 +163,7 @@ export const customerShape = {
   instagramHandle: instagramHandleSchema,
   firstName: nameSchema,
   lastName: optionalText(60, "Keep it under 60 characters"),
-  source: z.enum(CUSTOMER_SOURCES, "Choose where they came from"),
+  source: requiredSource,
   altMobile: optionalMobile,
   email: optionalEmail,
   notes: optionalText(2000, "Keep notes under 2,000 characters"),
@@ -146,6 +208,7 @@ export type CreateCustomerInput = z.input<typeof createCustomerSchema>;
 export const updateCustomerSchema = z.object({
   id: z.uuid(),
   ...customerShape,
+  source: optionalSource,
 });
 
 export type CustomerInput = z.input<z.ZodObject<typeof customerShape>>;

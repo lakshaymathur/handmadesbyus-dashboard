@@ -36,6 +36,11 @@ export type Duplicates = {
   instagramHandle?: ExistingCustomer;
 };
 
+const CONTACT_CONSTRAINTS = new Set([
+  "customers_mobile_unique",
+  "customers_instagram_handle_unique",
+]);
+
 type ContactKeys = { mobile: string | null; instagramHandle: string | null };
 
 /** Other customers who already have this mobile or handle (normalised values). */
@@ -111,7 +116,9 @@ async function withDuplicateCheck<T>(
       return save(tx);
     });
   } catch (error) {
-    if (uniqueViolation(error) !== null) {
+    // Only the mobile/handle constraints mean "someone else has it". Anything else (e.g.
+    // a customer number clash if the counter fell behind) is a real error: let it be logged.
+    if (CONTACT_CONSTRAINTS.has(uniqueViolation(error) ?? "")) {
       throw (
         duplicateError(await findDuplicates(db, keys, excludeId)) ??
         new ActionError(
@@ -188,14 +195,15 @@ export const updateCustomer = authedAction(
 
 /**
  * Locks the customer's row for the rest of the transaction, so address changes for one
- * customer happen one at a time (one default, never zero addresses).
+ * customer happen one at a time (one default, never zero addresses). NO KEY UPDATE, so
+ * rows that reference the customer (orders) can still be inserted meanwhile.
  */
 async function lockCustomer(tx: Executor, customerId: string): Promise<void> {
   const rows = await tx
     .select({ id: customers.id })
     .from(customers)
     .where(eq(customers.id, customerId))
-    .for("update");
+    .for("no key update");
   assertFound(rows, CUSTOMER_GONE);
 }
 

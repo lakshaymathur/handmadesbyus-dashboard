@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 import { z } from "zod";
+import { PageSection } from "@/components/page-section";
 import { ListSkeleton, PageHeader } from "@/components/page-header";
 import { buttonVariants } from "@/components/ui/button";
 import { AddressButtons } from "@/features/customers/components/address-form";
@@ -22,21 +23,6 @@ export default function CustomerPage({ params }: PageProps<"/customers/[id]">) {
         <Customer params={params} />
       </Suspense>
     </section>
-  );
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-3 border-t pt-6">
-      <h2 className="font-heading text-lg font-semibold">{title}</h2>
-      {children}
-    </div>
   );
 }
 
@@ -108,12 +94,12 @@ async function Customer({
       </div>
 
       {customer.notes && (
-        <Section title="Notes">
+        <PageSection title="Notes">
           <p className="wrap-anywhere whitespace-pre-line">{customer.notes}</p>
-        </Section>
+        </PageSection>
       )}
 
-      <Section title="Addresses">
+      <PageSection title="Addresses">
         {customer.addresses.length === 0 ? (
           <p className="text-muted-foreground">No address yet.</p>
         ) : (
@@ -156,13 +142,13 @@ async function Customer({
           <Plus aria-hidden />
           Add an address
         </Link>
-      </Section>
+      </PageSection>
 
-      <Section title="Orders">
+      <PageSection title="Orders">
         <p className="text-muted-foreground">
           Order history, lifetime spend and balance due arrive with orders (M4).
         </p>
-      </Section>
+      </PageSection>
     </>
   );
 }

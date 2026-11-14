@@ -41,8 +41,8 @@ async function EditCustomer({
           instagramHandle: customer.instagramHandle ?? "",
           firstName: customer.firstName,
           lastName: customer.lastName ?? "",
-          // Imported customers may have no source yet; the form asks for one.
-          source: customer.source ?? "other",
+          // Saved without one (e.g. imported): shown as "Not recorded" and kept unset.
+          source: customer.source ?? "",
           altMobile: customer.altMobile ?? "",
           email: customer.email ?? "",
           notes: customer.notes ?? "",

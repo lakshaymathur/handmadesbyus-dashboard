@@ -12,6 +12,18 @@ import { Input } from "@/components/ui/input";
 export function CustomerSearch({ initial }: { initial: string }) {
   const router = useRouter();
   const [query, setQuery] = useState(initial);
+  // The URL's query as last seen, and the last one this box put there. When the URL
+  // changes for another reason (the Customers tab, a link), the box follows it; when it
+  // catches up with our own typing, the box keeps what's typed since.
+  const [seen, setSeen] = useState(initial);
+  const [pushed, setPushed] = useState(initial);
+  if (initial !== seen) {
+    setSeen(initial);
+    if (initial !== pushed) {
+      setQuery(initial);
+      setPushed(initial);
+    }
+  }
   const [pending, startTransition] = useTransition();
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -19,6 +31,7 @@ export function CustomerSearch({ initial }: { initial: string }) {
 
   function search(value: string) {
     const q = value.trim();
+    setPushed(q);
     startTransition(() => {
       router.replace(
         q ? `/customers?q=${encodeURIComponent(q)}` : "/customers",
@@ -61,6 +74,7 @@ export function CustomerSearch({ initial }: { initial: string }) {
         autoCapitalize="none"
         spellCheck={false}
         enterKeyHint="search"
+        maxLength={100}
         className="h-11 pl-9"
       />
     </form>

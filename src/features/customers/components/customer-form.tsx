@@ -34,7 +34,7 @@ const SOURCE_OPTIONS = CUSTOMER_SOURCES.map((s) => ({
   label: SOURCE_LABELS[s],
 }));
 
-export const EMPTY_CUSTOMER: CustomerInput = {
+const EMPTY_CUSTOMER: CustomerInput = {
   mobile: "",
   instagramHandle: "",
   firstName: "",
@@ -73,10 +73,13 @@ export function CustomerForm({ customerId, initial }: Props) {
           ),
   );
   const [duplicates, setDuplicates] = useState<Duplicates>({});
+  // The values last checked, so leaving a field unchanged doesn't ask again; and a
+  // counter so a reply is only used if nothing was checked or edited after it was sent.
   const checked = useRef({
     mobile: initial?.mobile ?? "",
     instagramHandle: initial?.instagramHandle ?? "",
   });
+  const latestCheck = useRef(0);
 
   const bind: Bind<CreateCustomerInput> = {
     idPrefix,
@@ -86,6 +89,10 @@ export function CustomerForm({ customerId, initial }: Props) {
       form.set(key, value as never);
       if (key === "mobile" || key === "instagramHandle") {
         setDuplicates(({ [key]: _cleared, ...rest }) => rest);
+        // A reply still on its way is about the old value: ignore it, and check again
+        // when the field is left.
+        latestCheck.current++;
+        checked.current = { mobile: "", instagramHandle: "" };
       }
     },
   };
@@ -103,12 +110,15 @@ export function CustomerForm({ customerId, initial }: Props) {
       return;
     }
     checked.current = query;
+    const thisCheck = ++latestCheck.current;
     try {
       const result = await checkCustomerDuplicates({
         ...query,
         excludeId: customerId,
       });
-      if (result?.ok) setDuplicates(result.data);
+      if (result?.ok && thisCheck === latestCheck.current) {
+        setDuplicates(result.data);
+      }
     } catch {
       // Only a hint: saving checks again and reports duplicates on the fields.
     }
@@ -173,6 +183,8 @@ export function CustomerForm({ customerId, initial }: Props) {
         name="source"
         label="Where did they find you?"
         options={SOURCE_OPTIONS}
+        // Only shown for customers saved without one (e.g. imported); can't be re-chosen.
+        placeholder={initial?.source === "" ? "Not recorded" : undefined}
       />
 
       {!customerId && (

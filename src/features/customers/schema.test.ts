@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { customerName, formatAddress, formatMobile } from "./format";
 import {
   createCustomerSchema,
+  mobileSearchDigits,
   normalizeInstagramHandle,
   normalizeMobile,
   type CreateCustomerInput,
@@ -32,8 +33,41 @@ describe("normalizeInstagramHandle", () => {
     ["https://www.instagram.com/Ananya.Creates/?hl=en", "ananya.creates"],
     ["instagram.com/fatima_gifts", "fatima_gifts"],
     ["", ""],
+    ["https://instagram.com/stories/Fatima_Gifts/3141592653/", "fatima_gifts"],
+    ["m.instagram.com/ananya.creates", "ananya.creates"],
   ])("%s → %s", (input, output) => {
     expect(normalizeInstagramHandle(input)).toBe(output);
+  });
+
+  it.each([
+    "https://www.instagram.com/p/C7xYz12/",
+    "https://www.instagram.com/reel/C7xYz12/?igsh=abc",
+    "instagram.com/explore/tags/potli",
+    "https://instagram.com/",
+  ])("%s isn't a profile: null", (input) => {
+    expect(normalizeInstagramHandle(input)).toBeNull();
+  });
+
+  it("explains why a post link is refused", () => {
+    const result = createCustomerSchema.shape.instagramHandle.safeParse(
+      "https://www.instagram.com/p/C7xYz12/",
+    );
+    expect(result.error?.issues[0]?.message).toMatch(/link to a post/);
+  });
+});
+
+describe("mobileSearchDigits", () => {
+  it.each([
+    ["98100", "98100"],
+    ["+91 98100", "98100"],
+    ["+9198100", "98100"],
+    ["91 98100", "98100"],
+    ["919810000001", "9810000001"],
+    ["098100", "98100"],
+    ["9100", "9100"], // just digits that happen to start with 91
+    ["(981) 000", "981000"],
+  ])("%s → %s", (input, output) => {
+    expect(mobileSearchDigits(input)).toBe(output);
   });
 });
 

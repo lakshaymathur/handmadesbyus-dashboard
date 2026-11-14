@@ -8,7 +8,7 @@ vi.mock(
 vi.mock("next/cache", () => ({ refresh: vi.fn() }));
 
 import { db } from "@/db/client";
-import { customerAddresses, customers } from "@/db/schema";
+import { customerAddresses, customers, idCounters } from "@/db/schema";
 import { signInTestUser, signOutTestUser } from "@/db/test/session";
 import {
   addAddress,
@@ -152,6 +152,37 @@ describe("adding a customer", () => {
     expect(await db.$count(customers)).toBe(1);
   });
 
+  it("doesn't blame a duplicate for other clashes (e.g. a counter behind the table)", async () => {
+    await add(ANANYA);
+    await db
+      .update(idCounters)
+      .set({ lastValue: 0 })
+      .where(eq(idCounters.name, "customer"));
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    expect(await createCustomer(ROHIT)).toEqual({
+      ok: false,
+      error: "Something went wrong. Please try again.",
+    });
+    expect(consoleError).toHaveBeenCalled(); // logged, so someone can see why
+    consoleError.mockRestore();
+  });
+
+  it("refuses a post link as a handle", async () => {
+    expect(
+      await createCustomer({
+        ...ANANYA,
+        instagramHandle: "https://www.instagram.com/p/C7xYz12/",
+      }),
+    ).toMatchObject({
+      ok: false,
+      fieldErrors: {
+        instagramHandle: [expect.stringMatching(/link to a post/)],
+      },
+    });
+  });
+
   it("validates on the server too", async () => {
     expect(
       await createCustomer({ ...ANANYA, mobile: "123", pin: "1" }),
@@ -214,6 +245,8 @@ describe("searching", () => {
     ["c1", ["Ananya Sharma"]],
     ["98100", ["Ananya Sharma"]],
     ["+91 98200 00002", ["Rohit"]],
+    ["+91 98100", ["Ananya Sharma"]], // partial, typed with the country code
+    ["instagram.com/p/C7xYz12", []], // a post link matches no handle
     ["99999", ["Rohit"]], // alternate mobile
     ["ana sha", ["Ananya Sharma"]],
     ["SHARMA", ["Ananya Sharma"]],
@@ -290,6 +323,23 @@ describe("editing a customer", () => {
         excludeId: ananya,
       }),
     ).toEqual({ ok: true, data: {} });
+  });
+
+  it("keeps a missing source unset (never guesses one)", async () => {
+    const id = await add(ANANYA);
+    await db
+      .update(customers)
+      .set({ source: null })
+      .where(eq(customers.id, id));
+    await redirectTarget(
+      updateCustomer({ ...customerFields(ANANYA), id, source: "", notes: "x" }),
+    );
+    expect(await getCustomer(id)).toMatchObject({ source: null, notes: "x" });
+    // Adding still needs one.
+    expect(await createCustomer({ ...ROHIT, source: "" })).toMatchObject({
+      ok: false,
+      fieldErrors: { source: ["Choose where they came from"] },
+    });
   });
 
   it("says so if the customer is gone", async () => {

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { customisationInput, listKind } from "@/db/schema";
 import { moneyField } from "@/lib/money";
+import type { Same } from "@/lib/types";
 import { nameSchema } from "@/lib/validation";
 
 // Zod schemas for the Settings forms, shared by the client forms and the server actions.
@@ -21,7 +22,6 @@ export type ListSlug = keyof typeof LIST_PAGES;
 export type ListKind = (typeof LIST_PAGES)[ListSlug]["kind"];
 
 // Fails to compile if LIST_PAGES and the list_kind enum in src/db/schema.ts drift apart.
-type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 const kindsMatch: Same<ListKind, (typeof listKind.enumValues)[number]> = true;
 void kindsMatch;
 

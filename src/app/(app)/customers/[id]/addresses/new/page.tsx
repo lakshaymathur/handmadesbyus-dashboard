@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { z } from "zod";
 import { ListSkeleton, PageHeader } from "@/components/page-header";
 import { AddressForm } from "@/features/customers/components/address-form";
-import { getCustomer } from "@/features/customers/queries";
+import { getCustomerHeading } from "@/features/customers/queries";
 
 export const metadata: Metadata = { title: "Add an address · HandMadesByUs" };
 
@@ -25,7 +25,7 @@ async function NewAddress({
 }: Pick<PageProps<"/customers/[id]/addresses/new">, "params">) {
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  const customer = await getCustomer(id);
+  const customer = await getCustomerHeading(id);
   if (!customer) notFound();
   return (
     <>
