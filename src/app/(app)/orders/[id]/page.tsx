@@ -1,0 +1,191 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { Suspense } from "react";
+import { z } from "zod";
+import { ListSkeleton, PageHeader } from "@/components/page-header";
+import { PageSection } from "@/components/page-section";
+import { formatAddress, formatMobile } from "@/features/customers/format";
+import { Thumbnail } from "@/features/orders/components/item-editor";
+import { StatusBadge } from "@/features/orders/components/status-badge";
+import { STATUS_LABELS } from "@/features/orders/lifecycle";
+import { lineTotal, unitPriceWithExtras } from "@/features/orders/pricing";
+import { getOrder, type OrderDetail } from "@/features/orders/queries";
+import { CHANNEL_LABELS, type Channel } from "@/features/orders/schema";
+import { formatDateOnly, formatDateTime } from "@/lib/dates";
+import { formatMoney } from "@/lib/money";
+
+export const metadata: Metadata = { title: "Order · HandMadesByUs" };
+
+// The id comes from the URL, so it's read inside <Suspense>.
+export default function OrderPage({ params }: PageProps<"/orders/[id]">) {
+  return (
+    <section className="flex flex-col gap-6">
+      <Suspense fallback={<ListSkeleton withHeader />}>
+        <Order params={params} />
+      </Suspense>
+    </section>
+  );
+}
+
+async function Order({ params }: Pick<PageProps<"/orders/[id]">, "params">) {
+  const { id } = await params;
+  if (!z.uuid().safeParse(id).success) notFound();
+  const order = await getOrder(id);
+  if (!order) notFound();
+
+  return (
+    <>
+      <PageHeader
+        title={order.code}
+        back={{ href: "/orders", label: "Orders" }}
+      />
+      <div className="-mt-4 flex flex-wrap items-center gap-2">
+        <StatusBadge status={order.status} />
+        {order.priority === "urgent" && (
+          <span className="text-sm font-semibold text-destructive">Urgent</span>
+        )}
+      </div>
+
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+        <dt className="text-muted-foreground">Customer</dt>
+        <dd>
+          <Link href={`/customers/${order.customer.id}`} className="underline">
+            {order.customer.name}
+          </Link>{" "}
+          <span className="text-sm text-muted-foreground">
+            {formatMobile(order.customer.mobile)}
+          </span>
+        </dd>
+        <dt className="text-muted-foreground">Ordered</dt>
+        <dd>
+          {formatDateOnly(order.orderDate)}
+          {order.channel && ` via ${CHANNEL_LABELS[order.channel as Channel]}`}
+        </dd>
+        <dt className="text-muted-foreground">Promised</dt>
+        <dd>{formatDateOnly(order.promisedDate)}</dd>
+        {order.deliveredDate && (
+          <>
+            <dt className="text-muted-foreground">Delivered</dt>
+            <dd>{formatDateOnly(order.deliveredDate)}</dd>
+          </>
+        )}
+        {order.status === "cancelled" && (
+          <>
+            <dt className="text-muted-foreground">Cancelled</dt>
+            <dd className="wrap-anywhere">
+              {order.cancelReason}
+              {order.refundOwed && " · Refund owed"}
+            </dd>
+          </>
+        )}
+      </dl>
+
+      <PageSection title="Items">
+        <ul className="flex flex-col divide-y rounded-lg border">
+          {order.items.map((item) => (
+            <li key={item.id} className="flex items-start gap-3 p-3">
+              <Thumbnail url={item.thumbnailUrl} />
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="font-medium wrap-anywhere">
+                  {item.productName}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {item.quantity} × {formatMoney(unitPriceWithExtras(item))}
+                </span>
+                {item.customisations.length > 0 && (
+                  <span className="text-sm wrap-anywhere text-muted-foreground">
+                    {item.customisations
+                      .map((c) =>
+                        c.choiceName
+                          ? `${c.name} (${c.choiceName})`
+                          : c.text
+                            ? `${c.name} “${c.text}”`
+                            : c.name,
+                      )
+                      .join(", ")}
+                  </span>
+                )}
+                {item.notes && (
+                  <span className="text-sm wrap-anywhere">{item.notes}</span>
+                )}
+                <span className="text-sm">
+                  Stage: <span className="font-medium">{item.stage.name}</span>
+                </span>
+              </div>
+              <span className="font-medium">
+                {formatMoney(lineTotal(item))}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </PageSection>
+
+      <PageSection title="Price">
+        <PriceBreakdown order={order} />
+      </PageSection>
+
+      <PageSection title="Delivery address">
+        <p className="wrap-anywhere">{formatAddress(order.address)}</p>
+      </PageSection>
+
+      {order.notes && (
+        <PageSection title="Notes">
+          <p className="wrap-anywhere whitespace-pre-line">{order.notes}</p>
+        </PageSection>
+      )}
+
+      <PageSection title="History">
+        <ol className="flex flex-col gap-3">
+          {order.history.map((h) => (
+            <li key={h.id} className="flex flex-col text-sm">
+              <span>
+                {h.toStatus
+                  ? h.fromStatus
+                    ? `${STATUS_LABELS[h.fromStatus]} → ${STATUS_LABELS[h.toStatus]}`
+                    : `Order created (${STATUS_LABELS[h.toStatus].toLowerCase()})`
+                  : `${h.itemName ?? "Removed item"}: ${h.fromStage ?? "?"} → ${h.toStage ?? "?"}`}
+              </span>
+              {h.note && (
+                <span className="wrap-anywhere text-muted-foreground">
+                  {h.note}
+                </span>
+              )}
+              <span className="text-xs text-muted-foreground">
+                {formatDateTime(h.at)} · {h.by}
+              </span>
+            </li>
+          ))}
+        </ol>
+      </PageSection>
+    </>
+  );
+}
+
+function PriceBreakdown({ order }: { order: OrderDetail }) {
+  const t = order.totals;
+  return (
+    <dl className="grid grid-cols-[1fr_auto] gap-y-1 text-sm">
+      <dt>Items</dt>
+      <dd className="text-right">
+        {formatMoney(t.subtotal - t.customisations)}
+      </dd>
+      <dt>Customisations</dt>
+      <dd className="text-right">{formatMoney(t.customisations)}</dd>
+      {t.discount > 0 && (
+        <>
+          <dt>Discount</dt>
+          <dd className="text-right">−{formatMoney(t.discount)}</dd>
+        </>
+      )}
+      <dt>Shipping</dt>
+      <dd className="text-right">{formatMoney(t.shippingCharged)}</dd>
+      <dt className="border-t pt-1 font-semibold">Total</dt>
+      <dd className="border-t pt-1 text-right font-semibold">
+        {formatMoney(t.total)}
+      </dd>
+      <dt className="text-muted-foreground">Paid / balance due</dt>
+      <dd className="text-right text-muted-foreground">With payments (M6)</dd>
+    </dl>
+  );
+}

@@ -234,3 +234,8 @@ export const updateAddressSchema = z.object({
 });
 
 export const addressIdSchema = z.object({ id: z.uuid() });
+
+/** Finding customers from another form (the order form's customer picker). */
+export const customerSearchSchema = z.object({ query: z.string().max(100) });
+
+export const customerIdSchema = z.object({ id: z.uuid() });

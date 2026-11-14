@@ -34,7 +34,7 @@ export function TextField<Values>({
   label: string;
   help?: string;
   inputMode?: "tel" | "numeric" | "decimal" | "email";
-  type?: "tel" | "email";
+  type?: "tel" | "email" | "date";
   autoComplete?: string;
   autoCapitalize?: "none" | "words";
   onBlur?: () => void;

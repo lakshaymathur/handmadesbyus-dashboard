@@ -3,6 +3,7 @@
 import { and, asc, eq, ne, or } from "drizzle-orm";
 import { refresh } from "next/cache";
 import { redirect } from "next/navigation";
+import type { z } from "zod";
 import { db } from "@/db/client";
 import type { Executor } from "@/db/connect";
 import { uniqueViolation } from "@/db/errors";
@@ -12,9 +13,17 @@ import { ActionError, assertFound, authedAction } from "@/lib/auth/action";
 import { formatCustomerId } from "@/lib/ids";
 import { customerName } from "./format";
 import {
+  getCustomer,
+  searchCustomers,
+  type CustomerDetail,
+  type CustomerSummary,
+} from "./queries";
+import {
   addAddressSchema,
   addressIdSchema,
   createCustomerSchema,
+  customerIdSchema,
+  customerSearchSchema,
   duplicateCheckSchema,
   instagramHandleSchema,
   mobileSchema,
@@ -150,30 +159,72 @@ export const checkCustomerDuplicates = authedAction(
   },
 );
 
+type NewCustomer = z.output<typeof createCustomerSchema>;
+
+/** Inserts a customer and their first (default) address; returns the new id. */
+function insertCustomer(
+  input: NewCustomer,
+  audit: { createdBy: string; updatedBy: string },
+): Promise<string> {
+  const { line1, line2, landmark, city, state, pin, ...customer } = input;
+  return withDuplicateCheck(customer, undefined, async (tx) => {
+    const [row] = await tx
+      .insert(customers)
+      .values({
+        ...customer,
+        number: await nextCustomerNumber(tx),
+        ...audit,
+      })
+      .returning({ id: customers.id });
+    if (!row) throw new Error("Customer insert returned no row");
+    await tx.insert(customerAddresses).values({
+      customerId: row.id,
+      ...{ line1, line2, landmark, city, state, pin },
+      isDefault: true,
+      ...audit,
+    });
+    return row.id;
+  });
+}
+
 /** Adds a customer with their first address (made the default), then opens their page. */
 export const createCustomer = authedAction(
   createCustomerSchema,
   async (input, { audit }) => {
-    const { line1, line2, landmark, city, state, pin, ...customer } = input;
-    const id = await withDuplicateCheck(customer, undefined, async (tx) => {
-      const [row] = await tx
-        .insert(customers)
-        .values({
-          ...customer,
-          number: await nextCustomerNumber(tx),
-          ...audit.create,
-        })
-        .returning({ id: customers.id });
-      if (!row) throw new Error("Customer insert returned no row");
-      await tx.insert(customerAddresses).values({
-        customerId: row.id,
-        ...{ line1, line2, landmark, city, state, pin },
-        isDefault: true,
-        ...audit.create,
-      });
-      return row.id;
-    });
+    const id = await insertCustomer(input, audit.create);
     redirect(`/customers/${id}`);
+  },
+);
+
+/**
+ * Adds a customer from another form (the order form) and returns them with their
+ * address, instead of opening their page.
+ */
+export const createCustomerInline = authedAction(
+  createCustomerSchema,
+  async (input, { audit }): Promise<CustomerDetail> => {
+    const customer = await getCustomer(
+      await insertCustomer(input, audit.create),
+    );
+    if (!customer) throw new Error("New customer not found");
+    return customer;
+  },
+);
+
+/** Customers matching a search, for a picker (at most 10). */
+export const findCustomers = authedAction(
+  customerSearchSchema,
+  async ({ query }): Promise<CustomerSummary[]> =>
+    (await searchCustomers(query)).customers.slice(0, 10),
+);
+
+/** One customer with their addresses, for a picker that has just chosen them. */
+export const getCustomerForPicker = authedAction(
+  customerIdSchema,
+  async ({ id }): Promise<CustomerDetail> => {
+    const customer = await getCustomer(id);
+    if (!customer) throw new ActionError(CUSTOMER_GONE);
+    return customer;
   },
 );
 

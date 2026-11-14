@@ -9,6 +9,7 @@ import { useActionForm } from "@/lib/use-action-form";
 import {
   checkCustomerDuplicates,
   createCustomer,
+  createCustomerInline,
   updateCustomer,
   type Duplicates,
 } from "../actions";
@@ -26,6 +27,7 @@ import {
   TextField,
   type Bind,
 } from "@/components/form-fields";
+import type { CustomerDetail } from "../queries";
 import { AddressFields, EMPTY_ADDRESS } from "./address-fields";
 
 const SOURCE_OPTIONS = CUSTOMER_SOURCES.map((s) => ({
@@ -45,16 +47,23 @@ const EMPTY_CUSTOMER: CustomerInput = {
 };
 
 type Props =
-  /** Adding: the customer and their first address. */
-  | { customerId?: undefined; initial?: undefined }
+  /**
+   * Adding: the customer and their first address. With `onCreated` (adding from another
+   * form, e.g. an order), the new customer is handed back instead of opening their page.
+   */
+  | {
+      customerId?: undefined;
+      initial?: undefined;
+      onCreated?: (customer: CustomerDetail) => void;
+    }
   /** Editing an existing customer's own details. */
-  | { customerId: string; initial: CustomerInput };
+  | { customerId: string; initial: CustomerInput; onCreated?: undefined };
 
 /**
  * Add a customer with their first address, or edit one's details (§2.1). Warns as soon as
  * a mobile or handle belongs to someone else (§3.3).
  */
-export function CustomerForm({ customerId, initial }: Props) {
+export function CustomerForm({ customerId, initial, onCreated }: Props) {
   const idPrefix = useId();
   const form = useActionForm<CreateCustomerInput>(
     { ...(initial ?? EMPTY_CUSTOMER), ...EMPTY_ADDRESS },
@@ -65,11 +74,20 @@ export function CustomerForm({ customerId, initial }: Props) {
             { ...customer, id: customerId },
             updateCustomer,
           )
-        : validateThenRun(
-            createCustomerSchema,
-            { ...customer, line1, line2, landmark, city, state, pin },
-            createCustomer,
-          ),
+        : onCreated
+          ? validateThenRun(
+              createCustomerSchema,
+              { ...customer, line1, line2, landmark, city, state, pin },
+              createCustomerInline,
+            ).then((result) => {
+              if (result?.ok) onCreated(result.data);
+              return result;
+            })
+          : validateThenRun(
+              createCustomerSchema,
+              { ...customer, line1, line2, landmark, city, state, pin },
+              createCustomer,
+            ),
   );
   const [duplicates, setDuplicates] = useState<Duplicates>({});
   // The values last checked, so leaving a field unchanged doesn't ask again; and a

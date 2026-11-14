@@ -6,6 +6,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  or,
   sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -13,6 +14,7 @@ import { db } from "@/db/client";
 import { byName } from "@/db/order";
 import {
   categories,
+  customisationChoices,
   customisationOptionCategories,
   customisationOptions,
   listItems,
@@ -281,4 +283,108 @@ export async function getPhotoFile(
     (t) => IMAGE_EXTENSIONS[t] === extension,
   );
   return type ? { key: row.key, type } : null;
+}
+
+export type CatalogueOption = {
+  id: string;
+  name: string;
+  inputType: "none" | "text" | "choice";
+  maxLength: number | null;
+  /** Today's extra price per unit (a new order snapshots it). */
+  extraPrice: number;
+  choices: { id: string; name: string }[];
+};
+
+export type CatalogueProduct = {
+  id: string;
+  sku: string;
+  name: string;
+  categoryId: string;
+  category: string;
+  price: number;
+  archived: boolean;
+  thumbnailUrl: string | null;
+  /** Customisations the product offers, in display order (active ones only). */
+  options: CatalogueOption[];
+};
+
+/**
+ * What the order form can add (§3.2): active products, plus `includeIds` even if archived
+ * (products already on the order being edited), with the customisations each offers.
+ */
+export async function getOrderCatalogue(
+  includeIds: string[] = [],
+): Promise<CatalogueProduct[]> {
+  await requireUser();
+  const [rows, offered, choices] = await Promise.all([
+    db
+      .select({
+        id: products.id,
+        sku: products.sku,
+        name: products.name,
+        categoryId: products.categoryId,
+        category: categories.name,
+        price: products.price,
+        archived: sql<boolean>`${products.archivedAt} IS NOT NULL`,
+        thumbnailId: productPhotos.id,
+      })
+      .from(products)
+      .innerJoin(categories, eq(categories.id, products.categoryId))
+      .leftJoin(
+        productPhotos,
+        and(
+          eq(productPhotos.productId, products.id),
+          eq(productPhotos.position, 0),
+        ),
+      )
+      .where(
+        includeIds.length > 0
+          ? or(isNull(products.archivedAt), inArray(products.id, includeIds))
+          : isNull(products.archivedAt),
+      )
+      .orderBy(byName(products.name)),
+    db
+      .select({
+        productId: productCustomisationOptions.productId,
+        id: customisationOptions.id,
+        name: customisationOptions.name,
+        inputType: customisationOptions.inputType,
+        maxLength: customisationOptions.maxLength,
+        extraPrice: customisationOptions.extraPrice,
+      })
+      .from(productCustomisationOptions)
+      .innerJoin(
+        customisationOptions,
+        eq(customisationOptions.id, productCustomisationOptions.optionId),
+      )
+      .where(eq(customisationOptions.active, true))
+      .orderBy(
+        asc(customisationOptions.sortOrder),
+        byName(customisationOptions.name),
+      ),
+    db
+      .select({
+        optionId: customisationChoices.optionId,
+        id: customisationChoices.id,
+        name: customisationChoices.name,
+      })
+      .from(customisationChoices)
+      .where(eq(customisationChoices.active, true))
+      .orderBy(
+        asc(customisationChoices.sortOrder),
+        byName(customisationChoices.name),
+      ),
+  ]);
+  return rows.map(({ thumbnailId, ...row }) => ({
+    ...row,
+    thumbnailUrl: thumbnailId ? photoUrl(thumbnailId) : null,
+    options: offered
+      .filter((o) => o.productId === row.id)
+      .map(({ productId: _product, ...o }) => ({
+        ...o,
+        choices: choices
+          .filter((c) => c.optionId === o.id)
+          .map(({ id, name }) => ({ id, name })),
+      })),
+  }));
 }
